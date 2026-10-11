@@ -1,0 +1,97 @@
+name: CI and deploy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: givora
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/givora
+      JWT_ACCESS_SECRET: ci-secret-must-be-at-least-32-characters
+      OTP_PEPPER: ci-otp-pepper-value
+      WEB_ORIGIN: http://localhost:3000
+      PUBLIC_WEB_URL: http://localhost:3000
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx prisma validate
+      - run: npx prisma migrate deploy
+      - run: npm run lint
+      - run: npx tsc --noEmit -p tsconfig.build.json
+      - run: npm test
+      - run: npm run test:e2e
+      - run: npm run build
+
+  deploy:
+    needs: ci
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run build
+      - name: Publish release
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          source: 'dist,package.json,package-lock.json,prisma,ecosystem.config.cjs'
+          target: /var/www/givora-api/releases/${{ github.sha }}
+          strip_components: 0
+      - name: Activate release
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            REL=/var/www/givora-api/releases/${{ github.sha }}
+            PREV="$(readlink -f /var/www/givora-api/current || true)"
+            ln -sfn /var/www/givora-api/shared/.env "$REL/.env"
+            cd "$REL"
+            npm ci
+            npx prisma generate
+            npx prisma migrate deploy
+            ln -sfn "$REL" /var/www/givora-api/current
+            pm2 startOrReload /var/www/givora-api/current/ecosystem.config.cjs --update-env
+            sleep 2
+            if ! curl --fail --silent http://127.0.0.1:4000/api/v1/health | grep -q '"database":"ok"'; then
+              if [ -n "$PREV" ]; then ln -sfn "$PREV" /var/www/givora-api/current; pm2 startOrReload /var/www/givora-api/current/ecosystem.config.cjs --update-env; fi
+              exit 1
+            fi
+            cd /var/www/givora-api/releases
+            ls -1dt */ | tail -n +6 | xargs -r rm -rf
