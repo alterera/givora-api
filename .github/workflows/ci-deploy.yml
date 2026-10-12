@@ -52,26 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm install -g npm@11.16.0
-      - run: npm ci
-      - run: npx prisma generate
-      - run: npm run build
-      - name: Publish release
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT }}
-          source: 'dist,package.json,package-lock.json,prisma,ecosystem.config.cjs'
-          target: /var/www/givora-api/releases/${{ github.sha }}
-          strip_components: 0
-      - name: Activate release
+      - name: Update server
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -81,19 +62,14 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            REL=/var/www/givora-api/releases/${{ github.sha }}
-            PREV="$(readlink -f /var/www/givora-api/current || true)"
-            ln -sfn /var/www/givora-api/shared/.env "$REL/.env"
-            cd "$REL"
+            export PATH="/root/.nvm/versions/node/v24.21.0/bin:$PATH"
+            cd /var/www/givora-api
+            git fetch origin main
+            git reset --hard origin/main
             npm ci
             npx prisma generate
             npx prisma migrate deploy
-            ln -sfn "$REL" /var/www/givora-api/current
-            pm2 startOrReload /var/www/givora-api/current/ecosystem.config.cjs --update-env
+            npm run build
+            pm2 startOrReload ecosystem.config.cjs --update-env
             sleep 2
-            if ! curl --fail --silent http://127.0.0.1:4000/api/v1/health | grep -q '"database":"ok"'; then
-              if [ -n "$PREV" ]; then ln -sfn "$PREV" /var/www/givora-api/current; pm2 startOrReload /var/www/givora-api/current/ecosystem.config.cjs --update-env; fi
-              exit 1
-            fi
-            cd /var/www/givora-api/releases
-            ls -1dt */ | tail -n +6 | xargs -r rm -rf
+            curl --fail --silent http://127.0.0.1:4000/api/v1/health | grep -q '"database":"ok"'
