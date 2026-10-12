@@ -70,6 +70,21 @@ jobs:
             npx prisma generate
             npx prisma migrate deploy
             npm run build
-            pm2 startOrReload ecosystem.config.cjs --update-env
-            sleep 2
-            curl --fail --silent http://127.0.0.1:4000/api/v1/health | grep -q '"database":"ok"'
+            npm rebuild argon2
+            pm2 delete givora-api || true
+            pm2 start ecosystem.config.cjs
+            pm2 save
+            ok=0
+            for _ in 1 2 3 4 5 6 7 8 9 10; do
+              if curl --fail --silent http://127.0.0.1:4000/api/v1/health | grep -q '"database":"ok"'; then
+                ok=1
+                break
+              fi
+              sleep 2
+            done
+            if [ "$ok" -ne 1 ]; then
+              echo "health check failed"
+              curl --silent --show-error http://127.0.0.1:4000/api/v1/health || true
+              pm2 logs givora-api --lines 60 --nostream || true
+              exit 1
+            fi
