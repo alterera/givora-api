@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomToken } from '../domain/tokens.js';
 import { badRequest } from '../common/http.js';
 import type { AppEnv } from '../config/env.js';
 
 const ALLOWED = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const DIGITAL = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'application/zip']);
 
 @Injectable()
 export class MediaService {
@@ -23,6 +24,24 @@ export class MediaService {
     const uploadUrl = await getSignedUrl(this.s3(), command, { expiresIn: 300 });
     const publicUrl = `${this.config.get('S3_PUBLIC_BASE_URL', { infer: true }).replace(/\/$/, '')}/${key}`;
     return { uploadUrl, publicUrl, key, fileName };
+  }
+
+  async presignPrivate(fileName: string, contentType: string) {
+    if (!DIGITAL.has(contentType)) throw badRequest('FILE_TYPE', 'Upload a PDF, image, or ZIP.');
+    const key = `gifts/${randomToken(16)}-${fileName.replace(/[^a-zA-Z0-9._-]/g, '')}`;
+    const bucket = this.config.get('S3_PRIVATE_BUCKET', { infer: true });
+    const command = new PutObjectCommand({ Bucket: bucket, Key: key, ContentType: contentType });
+    const uploadUrl = await getSignedUrl(this.s3(), command, { expiresIn: 300 });
+    return { uploadUrl, key, fileName, contentType };
+  }
+
+  async presignDownload(key: string, fileName: string) {
+    const command = new GetObjectCommand({
+      Bucket: this.config.get('S3_PRIVATE_BUCKET', { infer: true }),
+      Key: key,
+      ResponseContentDisposition: `attachment; filename="${fileName.replace(/"/g, '')}"`,
+    });
+    return getSignedUrl(this.s3(), command, { expiresIn: 300 });
   }
 
   private s3() {

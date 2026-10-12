@@ -50,6 +50,23 @@ export class CreateProductDto {
   @IsOptional()
   @IsString()
   status?: 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
+
+  @IsOptional()
+  @IsString()
+  type?: 'PHYSICAL' | 'DIGITAL';
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  shippingPaise?: number;
+
+  @IsOptional()
+  @IsString()
+  deliveryInfo?: string;
+
+  @IsOptional()
+  @IsString()
+  refundTerms?: string;
 }
 
 export class UpdateProductDto {

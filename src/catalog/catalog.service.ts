@@ -79,7 +79,11 @@ export function toPublicProduct(product: {
   slug: string;
   description: string;
   story: string | null;
-  giftedCount: number;
+    giftedCount: number;
+    type: string;
+    shippingPaise: number;
+    deliveryInfo: string | null;
+    refundTerms: string | null;
   category: { name: string; slug: string } | null;
   occasion: { name: string; slug: string } | null;
   images: Array<{ url: string; alt: string | null }>;
@@ -100,6 +104,10 @@ export function toPublicProduct(product: {
     description: product.description,
     story: product.story,
     giftedCount: product.giftedCount,
+    type: product.type,
+    shippingPaise: product.type === 'DIGITAL' ? 0 : product.shippingPaise,
+    deliveryInfo: product.deliveryInfo,
+    refundTerms: product.refundTerms,
     category: product.category,
     occasion: product.occasion,
     images: product.images,
@@ -109,8 +117,8 @@ export function toPublicProduct(product: {
       sku: variant.sku,
       pricePaise: variant.pricePaise,
       compareAtPaise: variant.compareAtPaise,
-      available: Math.max(0, variant.onHand - variant.reserved),
-      lowStock: variant.onHand - variant.reserved > 0 && variant.onHand - variant.reserved <= 3,
+      available: product.type === 'DIGITAL' ? null : Math.max(0, variant.onHand - variant.reserved),
+      lowStock: product.type !== 'DIGITAL' && variant.onHand - variant.reserved > 0 && variant.onHand - variant.reserved <= 3,
     })),
   };
 }

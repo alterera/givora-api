@@ -17,6 +17,18 @@ The API listens on port 4000. Interactive docs are at `/api/v1/docs`.
 
 Guest senders and recipients verify with a WhatsApp one-time code. In development, if WhatsApp credentials are empty, the code is printed in the API log.
 
+## Telegram Mini App
+
+Create `@GivoraWorldBot` in BotFather. Set the Main Mini App URL to `https://givoraworld.com/tg` and the menu button to the same URL. Then register the webhook:
+
+```bash
+PUBLIC_API_URL=https://api.givoraworld.com npx tsx scripts/set-telegram-webhook.ts
+```
+
+Create a private MinIO bucket `givora-private` with no anonymous access. Product photos stay in the public `givora-media` bucket.
+
+Test Cashfree UPI inside the Telegram webview on Android and iOS. If an app intent does not return, the checkout falls back to `WebApp.openLink`.
+
 ## Production
 
 Nginx samples live in `deploy/`. PM2 uses `ecosystem.config.cjs` from `/var/www/givora-api/current`. Keep secrets in `/var/www/givora-api/shared/.env`.

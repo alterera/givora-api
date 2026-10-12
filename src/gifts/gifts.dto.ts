@@ -1,85 +1,66 @@
-import { Type } from 'class-transformer';
-import {
-  ArrayMinSize,
-  IsArray,
-  IsBoolean,
-  IsIn,
-  IsInt,
-  IsOptional,
-  IsString,
-  MaxLength,
-  Min,
-  ValidateNested,
-} from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
-export class GiftItemDto {
+export class RedeemDto {
+  @IsOptional()
   @IsString()
-  variantId!: string;
+  addressId?: string;
 
-  @IsInt()
-  @Min(1)
-  quantity!: number;
+  @IsOptional()
+  @IsString()
+  line1?: string;
+
+  @IsOptional()
+  @IsString()
+  line2?: string;
+
+  @IsOptional()
+  @IsString()
+  city?: string;
+
+  @IsOptional()
+  @IsString()
+  state?: string;
+
+  @IsOptional()
+  @IsString()
+  postalCode?: string;
 }
 
-export class CreateGiftDto {
-  @IsArray()
-  @ArrayMinSize(1)
-  @ValidateNested({ each: true })
-  @Type(() => GiftItemDto)
-  items!: GiftItemDto[];
-
+export class AddressDto {
   @IsString()
-  @MaxLength(500)
-  message!: string;
-
-  @IsString()
-  @MaxLength(80)
-  senderDisplayName!: string;
-
-  @IsBoolean()
-  isAnonymous!: boolean;
-
-  @IsIn(['cinematic', 'playful'])
-  revealTheme!: 'cinematic' | 'playful';
+  line1!: string;
 
   @IsOptional()
   @IsString()
-  recipientNameHint?: string;
+  line2?: string;
+
+  @IsString()
+  city!: string;
+
+  @IsString()
+  state!: string;
+
+  @IsString()
+  postalCode!: string;
 
   @IsOptional()
   @IsString()
-  recipientPhone?: string;
+  label?: string;
 }
 
-export class PatchGiftDto {
-  @IsOptional()
+export class ShipmentStatusDto {
   @IsString()
-  @MaxLength(500)
-  message?: string;
+  status!: string;
 
   @IsOptional()
   @IsString()
-  senderDisplayName?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  isAnonymous?: boolean;
-
-  @IsOptional()
-  @IsIn(['cinematic', 'playful'])
-  revealTheme?: 'cinematic' | 'playful';
-
-  @IsOptional()
-  @IsString()
-  recipientNameHint?: string;
-
-  @IsOptional()
-  @IsString()
-  recipientPhone?: string;
+  note?: string;
 }
 
-export class CheckoutDto {
-  @IsOptional()
+export class TrackingDto {
   @IsString()
-  phone?: string;
+  carrier!: string;
+
+  @IsString()
+  trackingRef!: string;
 }

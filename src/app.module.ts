@@ -23,8 +23,10 @@ import { GiftsService } from './gifts/gifts.service.js';
 import { PaymentsController } from './payments/payments.controller.js';
 import { PaymentsService } from './payments/payments.service.js';
 import { CashfreeProvider } from './payments/cashfree/cashfree.provider.js';
-import { RedemptionsController } from './redemptions/redemptions.controller.js';
-import { RedemptionsService } from './redemptions/redemptions.service.js';
+import { TelegramController } from './telegram/telegram.controller.js';
+import { TelegramSender } from './telegram/telegram.sender.js';
+import { CreatorsController } from './creators/creators.controller.js';
+import { CreatorsService } from './creators/creators.service.js';
 import { OrdersController } from './orders/orders.controller.js';
 import { OrdersService } from './orders/orders.service.js';
 import { MaintenanceService } from './maintenance/maintenance.service.js';
@@ -63,7 +65,8 @@ import { LookupController } from './lookup/lookup.controller.js';
     CatalogController,
     GiftsController,
     PaymentsController,
-    RedemptionsController,
+    TelegramController,
+    CreatorsController,
     OrdersController,
     LookupController,
   ],
@@ -78,7 +81,8 @@ import { LookupController } from './lookup/lookup.controller.js';
     GiftsService,
     PaymentsService,
     CashfreeProvider,
-    RedemptionsService,
+    TelegramSender,
+    CreatorsService,
     OrdersService,
     MaintenanceService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },

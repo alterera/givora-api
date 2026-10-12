@@ -5,21 +5,21 @@ import { normalizePhone } from './phone.js';
 
 describe('gift transitions', () => {
   it('allows payment to ready and claim', () => {
-    expect(canTransition(GIFT_TRANSITIONS, 'PAYMENT_PENDING', 'READY_TO_SEND')).toBe(true);
-    expect(canTransition(GIFT_TRANSITIONS, 'READY_TO_SEND', 'CLAIMED')).toBe(true);
+    expect(canTransition(GIFT_TRANSITIONS, 'AWAITING_REDEMPTION', 'REDEEMED')).toBe(true);
+    expect(canTransition(GIFT_TRANSITIONS, 'REDEEMED', 'FULFILLED')).toBe(true);
   });
 
   it('rejects skipping payment', () => {
-    expect(() => assertTransition(GIFT_TRANSITIONS, 'PAYMENT_PENDING', 'CLAIMED')).toThrow(
+    expect(() => assertTransition(GIFT_TRANSITIONS, 'AWAITING_REDEMPTION', 'REFUNDED')).toThrow(
       /INVALID_TRANSITION/,
     );
   });
 });
 
 describe('pricing', () => {
-  it('waives shipping above the threshold', () => {
-    expect(shippingPaise(200000, 4900, 150000)).toBe(0);
-    expect(shippingPaise(100000, 4900, 150000)).toBe(4900);
+  it('charges the flat shipping amount', () => {
+    expect(shippingPaise(200000, 4900, 0)).toBe(4900);
+    expect(shippingPaise(100000, 0, 0)).toBe(0);
   });
 
   it('converts paise without float drift', () => {

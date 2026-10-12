@@ -13,13 +13,13 @@ export class PaymentsController {
 
   @Get('payments/:id/status')
   status(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.payments.statusForSender(user.id, id);
+    return this.payments.statusForBuyer(user.id, id);
   }
 
   @Get('payments/provider-order/status')
   lookup(@CurrentUser() user: AuthUser, @Query('orderId') orderId: string) {
     if (!orderId) throw badRequest('ORDER_REQUIRED', 'Missing order id.');
-    return this.payments.statusByOrder(user.id, orderId);
+    return this.payments.statusByProviderOrder(user.id, orderId);
   }
 
   @Public()
@@ -30,8 +30,7 @@ export class PaymentsController {
     @Headers('x-webhook-timestamp') timestamp?: string,
     @Headers('x-webhook-signature') signature?: string,
   ) {
-    const raw = req.rawBody?.toString('utf8') ?? '';
-    return this.payments.handleWebhook(raw, timestamp, signature);
+    return this.payments.handleWebhook(req.rawBody?.toString('utf8') ?? '', timestamp, signature);
   }
 
   @Roles('ADMIN')

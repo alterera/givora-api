@@ -1,62 +1,37 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
-import { CurrentUser, Roles, type AuthUser } from '../common/decorators.js';
+import { CurrentUser, Idempotent, type AuthUser } from '../common/decorators.js';
 import { OrdersService } from './orders.service.js';
-
-class StatusDto {
-  @IsString()
-  status!: string;
-
-  @IsOptional()
-  @IsString()
-  note?: string;
-}
-
-class ShippingDto {
-  @IsString()
-  carrier!: string;
-
-  @IsString()
-  trackingRef!: string;
-}
+import { CheckoutOrderDto, CreateOrderDto } from './orders.dto.js';
+import { PaymentsService } from '../payments/payments.service.js';
 
 @ApiTags('orders')
-@Controller()
+@Controller('orders')
 export class OrdersController {
-  constructor(private readonly orders: OrdersService) {}
+  constructor(
+    private readonly orders: OrdersService,
+    private readonly payments: PaymentsService,
+  ) {}
 
-  @Get('orders')
+  @Idempotent()
+  @Post()
+  create(@CurrentUser() user: AuthUser, @Body() dto: CreateOrderDto) {
+    return this.orders.create(user.id, dto);
+  }
+
+  @Get()
   list(@CurrentUser() user: AuthUser) {
-    return this.orders.listForSender(user.id);
+    return this.orders.listForBuyer(user.id);
   }
 
-  @Get('orders/:id')
+  @Get(':id')
   get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.orders.getForSender(user.id, id);
+    return this.orders.getForBuyer(user.id, id);
   }
 
-  @Roles('ADMIN')
-  @Get('admin/orders')
-  adminList() {
-    return this.orders.adminList();
-  }
-
-  @Roles('ADMIN')
-  @Get('admin/gifts')
-  adminGifts() {
-    return this.orders.adminList();
-  }
-
-  @Roles('ADMIN')
-  @Patch('admin/orders/:id/status')
-  status(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: StatusDto) {
-    return this.orders.transition(id, dto.status, user.id, dto.note);
-  }
-
-  @Roles('ADMIN')
-  @Post('admin/orders/:id/shipping')
-  shipping(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: ShippingDto) {
-    return this.orders.addShipping(id, dto.carrier, dto.trackingRef, user.id);
+  @Idempotent()
+  @Post(':id/checkout')
+  checkout(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: CheckoutOrderDto) {
+    return this.payments.checkout(user.id, id, dto);
   }
 }

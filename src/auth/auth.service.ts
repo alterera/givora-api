@@ -36,10 +36,8 @@ export class AuthService {
       OTP_PEPPER: this.config.get('OTP_PEPPER', { infer: true }),
       OTP_TTL_SECONDS: this.config.get('OTP_TTL_SECONDS', { infer: true }),
       PAYMENT_WINDOW_MINUTES: this.config.get('PAYMENT_WINDOW_MINUTES', { infer: true }),
-      CLAIM_WINDOW_DAYS: this.config.get('CLAIM_WINDOW_DAYS', { infer: true }),
-      CLAIM_EXTENSION_DAYS: this.config.get('CLAIM_EXTENSION_DAYS', { infer: true }),
-      SHIPPING_FLAT_PAISE: this.config.get('SHIPPING_FLAT_PAISE', { infer: true }),
-      SHIPPING_FREE_ABOVE_PAISE: this.config.get('SHIPPING_FREE_ABOVE_PAISE', { infer: true }),
+      GIFT_REDEEM_DAYS: this.config.get('GIFT_REDEEM_DAYS', { infer: true }),
+      GIFT_REMINDER_DAYS: this.config.get('GIFT_REMINDER_DAYS', { infer: true }),
       CASHFREE_ENV: this.config.get('CASHFREE_ENV', { infer: true }),
       CASHFREE_APP_ID: this.config.get('CASHFREE_APP_ID', { infer: true }),
       CASHFREE_SECRET_KEY: this.config.get('CASHFREE_SECRET_KEY', { infer: true }),
@@ -60,6 +58,11 @@ export class AuthService {
       S3_ACCESS_KEY: this.config.get('S3_ACCESS_KEY', { infer: true }),
       S3_SECRET_KEY: this.config.get('S3_SECRET_KEY', { infer: true }),
       S3_PUBLIC_BASE_URL: this.config.get('S3_PUBLIC_BASE_URL', { infer: true }),
+      S3_PRIVATE_BUCKET: this.config.get('S3_PRIVATE_BUCKET', { infer: true }),
+      TELEGRAM_BOT_TOKEN: this.config.get('TELEGRAM_BOT_TOKEN', { infer: true }),
+      TELEGRAM_BOT_USERNAME: this.config.get('TELEGRAM_BOT_USERNAME', { infer: true }),
+      TELEGRAM_WEBHOOK_SECRET: this.config.get('TELEGRAM_WEBHOOK_SECRET', { infer: true }),
+      MINIAPP_URL: this.config.get('MINIAPP_URL', { infer: true }),
       SWAGGER_USER: this.config.get('SWAGGER_USER', { infer: true }),
       SWAGGER_PASSWORD: this.config.get('SWAGGER_PASSWORD', { infer: true }),
       SEED_ADMIN_EMAIL: this.config.get('SEED_ADMIN_EMAIL', { infer: true }),
@@ -215,6 +218,33 @@ export class AuthService {
     const passwordHash = await hash(password, { type: 2 });
     await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });
     return { updated: true };
+  }
+
+  async loginWithTelegram(
+    profile: { id: number | string; username?: string; first_name?: string },
+    meta: { ip?: string; userAgent?: string },
+  ) {
+    const telegramId = String(profile.id);
+    const user = await this.prisma.user.upsert({
+      where: { telegramId },
+      update: {
+        telegramUsername: profile.username,
+        displayName: profile.first_name,
+      },
+      create: {
+        telegramId,
+        telegramUsername: profile.username,
+        displayName: profile.first_name ?? 'Telegram user',
+      },
+    });
+    const session = await this.createSession(user.id, randomToken(16), meta);
+    const accessToken = await this.signAccess(user.id, user.role, session.id);
+    return { accessToken, user: await this.publicUser(user.id) };
+  }
+
+  async markBotCanMessage(userId: string) {
+    await this.prisma.user.update({ where: { id: userId }, data: { botCanMessage: true } });
+    return { ok: true };
   }
 
   async signClaimTicket(giftId: string, phone: string) {

@@ -1,64 +1,71 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { CurrentUser, Idempotent, type AuthUser } from '../common/decorators.js';
+import { CurrentUser, Idempotent, Roles, type AuthUser } from '../common/decorators.js';
 import { GiftsService } from './gifts.service.js';
-import { CheckoutDto, CreateGiftDto, PatchGiftDto } from './gifts.dto.js';
-import { PaymentsService } from '../payments/payments.service.js';
-import { OrdersService } from '../orders/orders.service.js';
+import { AddressDto, RedeemDto, ShipmentStatusDto, TrackingDto } from './gifts.dto.js';
 
 @ApiTags('gifts')
-@Controller('gifts')
+@Controller()
 export class GiftsController {
-  constructor(
-    private readonly gifts: GiftsService,
-    private readonly payments: PaymentsService,
-    private readonly orders: OrdersService,
-  ) {}
+  constructor(private readonly gifts: GiftsService) {}
 
-  @Idempotent()
-  @Post()
-  create(@CurrentUser() user: AuthUser, @Body() dto: CreateGiftDto) {
-    return this.gifts.create(user.id, dto);
+  @Get('gifts/received')
+  received(@CurrentUser() user: AuthUser) {
+    return this.gifts.received(user.id);
   }
 
-  @Get()
-  list(@CurrentUser() user: AuthUser) {
-    return this.gifts.listOwned(user.id);
+  @Get('gifts/:id')
+  one(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.gifts.getOne(user.id, id, user.role);
   }
 
-  @Get(':id')
-  get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.gifts.getOwned(user.id, id);
-  }
-
-  @Patch(':id')
-  patch(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: PatchGiftDto) {
-    return this.gifts.patch(user.id, id, dto);
+  @Post('gifts/:id/opened')
+  opened(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.gifts.opened(user.id, id);
   }
 
   @Idempotent()
-  @Post(':id/checkout')
-  checkout(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: CheckoutDto) {
-    return this.payments.checkout(user.id, id, dto);
+  @Post('gifts/:id/redeem')
+  redeem(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: RedeemDto) {
+    return this.gifts.redeem(user.id, id, dto);
   }
 
-  @Get(':id/share')
-  share(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.gifts.share(user.id, id);
+  @Get('gifts/:id/download')
+  download(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.gifts.download(user.id, id);
   }
 
-  @Get(':id/status')
-  status(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.gifts.status(user.id, id);
+  @Get('me/addresses')
+  addresses(@CurrentUser() user: AuthUser) {
+    return this.gifts.listAddresses(user.id);
   }
 
-  @Post(':id/extend')
-  extend(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.gifts.extend(user.id, id);
+  @Post('me/addresses')
+  addAddress(@CurrentUser() user: AuthUser, @Body() dto: AddressDto) {
+    return this.gifts.addAddress(user.id, dto);
   }
 
-  @Post(':id/revoke')
-  revoke(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.orders.revokeGift(id, user.id, true);
+  @Roles('ADMIN')
+  @Get('admin/shipments')
+  shipments() {
+    return this.gifts.adminShipments();
+  }
+
+  @Roles('ADMIN')
+  @Patch('admin/shipments/:id/status')
+  status(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: ShipmentStatusDto) {
+    return this.gifts.transitionShipment(id, dto.status, user.id, dto.note);
+  }
+
+  @Roles('ADMIN')
+  @Post('admin/shipments/:id/tracking')
+  tracking(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: TrackingDto) {
+    return this.gifts.addTracking(id, dto.carrier, dto.trackingRef, user.id);
+  }
+
+  @Roles('ADMIN')
+  @Get('admin/stats')
+  stats() {
+    return this.gifts.adminStats();
   }
 }

@@ -1,11 +1,28 @@
 export const GIFT_TRANSITIONS: Record<string, string[]> = {
-  PAYMENT_PENDING: ['READY_TO_SEND', 'CANCELLED'],
-  READY_TO_SEND: ['CLAIMED', 'EXPIRED', 'REVOKED'],
+  AWAITING_REDEMPTION: ['REDEEMED', 'FULFILLED', 'EXPIRED', 'CANCELLED'],
+  REDEEMED: ['FULFILLED', 'REFUNDED'],
   EXPIRED: ['REFUNDED'],
-  REVOKED: ['REFUNDED'],
-  CLAIMED: ['REFUNDED'],
-  CANCELLED: ['REFUNDED', 'READY_TO_SEND'],
+  CANCELLED: ['REFUNDED'],
+  FULFILLED: [],
   REFUNDED: [],
+};
+
+export const ORDER_TRANSITIONS: Record<string, string[]> = {
+  PENDING_PAYMENT: ['CONFIRMED', 'FAILED', 'EXPIRED'],
+  CONFIRMED: ['PARTIALLY_REFUNDED', 'REFUNDED'],
+  PARTIALLY_REFUNDED: ['REFUNDED'],
+  FAILED: [],
+  EXPIRED: [],
+  REFUNDED: [],
+};
+
+export const SHIPMENT_TRANSITIONS: Record<string, string[]> = {
+  PENDING: ['PACKED', 'FAILED'],
+  PACKED: ['SHIPPED', 'FAILED'],
+  SHIPPED: ['DELIVERED', 'FAILED', 'RETURNED'],
+  DELIVERED: ['RETURNED'],
+  FAILED: [],
+  RETURNED: [],
 };
 
 export const PAYMENT_TRANSITIONS: Record<string, string[]> = {
@@ -16,14 +33,7 @@ export const PAYMENT_TRANSITIONS: Record<string, string[]> = {
   EXPIRED: [],
 };
 
-export const FULFILMENT_TRANSITIONS: Record<string, string[]> = {
-  PLACED: ['PROCESSING', 'CANCELLED'],
-  PROCESSING: ['SHIPPED', 'CANCELLED'],
-  SHIPPED: ['DELIVERED', 'RETURNED'],
-  DELIVERED: ['RETURNED'],
-  CANCELLED: [],
-  RETURNED: [],
-};
+export const FULFILMENT_TRANSITIONS = SHIPMENT_TRANSITIONS;
 
 export function canTransition(
   table: Record<string, string[]>,

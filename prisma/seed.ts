@@ -102,6 +102,34 @@ async function main() {
       },
     });
   }
+
+  const creatorUser = await prisma.user.upsert({
+    where: { email: 'sophia@givora.test' },
+    update: {},
+    create: { email: 'sophia@givora.test', displayName: 'Sophia', telegramId: '10001' },
+  });
+  const creator = await prisma.creatorProfile.upsert({
+    where: { userId: creatorUser.id },
+    update: { status: 'APPROVED', approvedAt: new Date() },
+    create: {
+      userId: creatorUser.id,
+      slug: 'sophia',
+      shortCode: 'c_sophia1',
+      displayName: 'Sophia',
+      bio: 'A wishlist of things I would love to receive.',
+      giftNote: 'Send a gift. Make someone\'s day.',
+      status: 'APPROVED',
+      approvedAt: new Date(),
+    },
+  });
+  const variants = await prisma.productVariant.findMany({ take: 3 });
+  for (const [index, variant] of variants.entries()) {
+    await prisma.wishlistItem.upsert({
+      where: { creatorId_variantId: { creatorId: creator.id, variantId: variant.id } },
+      update: { sortOrder: index },
+      create: { creatorId: creator.id, variantId: variant.id, sortOrder: index },
+    });
+  }
 }
 
 main()

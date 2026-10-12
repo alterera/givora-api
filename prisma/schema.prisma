@@ -18,14 +18,30 @@ enum ProductStatus {
   ARCHIVED
 }
 
-enum GiftStatus {
-  PAYMENT_PENDING
-  READY_TO_SEND
-  CLAIMED
+enum ProductType {
+  PHYSICAL
+  DIGITAL
+}
+
+enum CreatorStatus {
+  PENDING
+  APPROVED
+  SUSPENDED
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  FAILED
   EXPIRED
-  CANCELLED
-  REVOKED
+  PARTIALLY_REFUNDED
   REFUNDED
+}
+
+enum OrderItemStatus {
+  PENDING
+  GIFTED
+  REFUNDED_UNAVAILABLE
 }
 
 enum PaymentStatus {
@@ -42,12 +58,21 @@ enum RefundStatus {
   FAILED
 }
 
-enum FulfilmentStatus {
-  PLACED
-  PROCESSING
+enum GiftStatus {
+  AWAITING_REDEMPTION
+  REDEEMED
+  FULFILLED
+  EXPIRED
+  CANCELLED
+  REFUNDED
+}
+
+enum ShipmentStatus {
+  PENDING
+  PACKED
   SHIPPED
   DELIVERED
-  CANCELLED
+  FAILED
   RETURNED
 }
 
@@ -58,20 +83,27 @@ enum ReservationStatus {
 }
 
 model User {
-  id              String    @id @default(cuid())
-  email           String?   @unique
-  phone           String?   @unique
-  emailVerifiedAt DateTime? @map("email_verified_at")
-  phoneVerifiedAt DateTime? @map("phone_verified_at")
-  passwordHash    String?   @map("password_hash")
-  displayName     String?   @map("display_name")
-  role            Role      @default(CUSTOMER)
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  id               String    @id @default(cuid())
+  email            String?   @unique
+  phone            String?   @unique
+  emailVerifiedAt  DateTime? @map("email_verified_at")
+  phoneVerifiedAt  DateTime? @map("phone_verified_at")
+  passwordHash     String?   @map("password_hash")
+  displayName      String?   @map("display_name")
+  role             Role      @default(CUSTOMER)
+  telegramId       String?   @unique @map("telegram_id")
+  telegramUsername String?   @map("telegram_username")
+  botCanMessage    Boolean   @default(false) @map("bot_can_message")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  sessions  Session[]
-  gifts     Gift[]
-  auditLogs AuditLog[]
+  sessions      Session[]
+  auditLogs     AuditLog[]
+  creator       CreatorProfile?
+  orders        Order[]           @relation("BuyerOrders")
+  giftsReceived Gift[]            @relation("GiftRecipient")
+  giftsBought   Gift[]            @relation("GiftBuyer")
+  addresses     Address[]
 
   @@map("users")
 }
@@ -123,6 +155,44 @@ model ActionToken {
   @@map("action_tokens")
 }
 
+model CreatorProfile {
+  id                String        @id @default(cuid())
+  userId            String        @unique @map("user_id")
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slug              String        @unique
+  shortCode         String        @unique @map("short_code")
+  displayName       String        @map("display_name")
+  bio               String        @default("")
+  avatarUrl         String?       @map("avatar_url")
+  giftNote          String        @default("") @map("gift_note")
+  personaDisclosure String?       @map("persona_disclosure")
+  status            CreatorStatus @default(PENDING)
+  approvedAt        DateTime?     @map("approved_at")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  wishlist WishlistItem[]
+  orders   Order[]
+
+  @@map("creator_profiles")
+}
+
+model WishlistItem {
+  id        String         @id @default(cuid())
+  creatorId String         @map("creator_id")
+  creator   CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  variantId String         @map("variant_id")
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  sortOrder Int            @default(0) @map("sort_order")
+  isVisible Boolean        @default(true) @map("is_visible")
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+
+  @@unique([creatorId, variantId])
+  @@index([creatorId, sortOrder])
+  @@map("wishlist_items")
+}
+
 model Category {
   id          String    @id @default(cuid())
   name        String
@@ -149,21 +219,26 @@ model Occasion {
 }
 
 model Product {
-  id          String        @id @default(cuid())
-  name        String
-  slug        String        @unique
-  description String
-  story       String?
-  status      ProductStatus @default(DRAFT)
-  categoryId  String?       @map("category_id")
-  category    Category?     @relation(fields: [categoryId], references: [id])
-  occasionId  String?       @map("occasion_id")
-  occasion    Occasion?     @relation(fields: [occasionId], references: [id])
-  giftedCount Int           @default(0) @map("gifted_count")
-  images      ProductImage[]
-  variants    ProductVariant[]
-  createdAt   DateTime      @default(now()) @map("created_at")
-  updatedAt   DateTime      @updatedAt @map("updated_at")
+  id           String        @id @default(cuid())
+  name         String
+  slug         String        @unique
+  description  String
+  story        String?
+  status       ProductStatus @default(DRAFT)
+  type         ProductType   @default(PHYSICAL)
+  shippingPaise Int          @default(0) @map("shipping_paise")
+  deliveryInfo String?       @map("delivery_info")
+  refundTerms  String?       @map("refund_terms")
+  categoryId   String?       @map("category_id")
+  category     Category?     @relation(fields: [categoryId], references: [id])
+  occasionId   String?       @map("occasion_id")
+  occasion     Occasion?     @relation(fields: [occasionId], references: [id])
+  giftedCount  Int           @default(0) @map("gifted_count")
+  images       ProductImage[]
+  variants     ProductVariant[]
+  digitalAsset DigitalAsset?
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
 
   @@index([status, categoryId])
   @@map("products")
@@ -178,6 +253,19 @@ model ProductImage {
   sortOrder Int     @default(0) @map("sort_order")
 
   @@map("product_images")
+}
+
+model DigitalAsset {
+  id          String   @id @default(cuid())
+  productId   String   @unique @map("product_id")
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  storageKey  String   @map("storage_key")
+  fileName    String   @map("file_name")
+  contentType String   @map("content_type")
+  sizeBytes   Int      @default(0) @map("size_bytes")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("digital_assets")
 }
 
 model ProductVariant {
@@ -196,23 +284,22 @@ model ProductVariant {
 
   reservations InventoryReservation[]
   adjustments  StockAdjustment[]
+  wishlist     WishlistItem[]
 
   @@map("product_variants")
 }
 
 model InventoryReservation {
-  id        String            @id @default(cuid())
-  giftId    String            @map("gift_id")
-  gift      Gift              @relation(fields: [giftId], references: [id], onDelete: Cascade)
-  variantId String            @map("variant_id")
-  variant   ProductVariant    @relation(fields: [variantId], references: [id])
-  quantity  Int
-  status    ReservationStatus @default(ACTIVE)
-  expiresAt DateTime          @map("expires_at")
-  createdAt DateTime          @default(now()) @map("created_at")
+  id          String            @id @default(cuid())
+  orderItemId String            @unique @map("order_item_id")
+  orderItem   OrderItem         @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  variantId   String            @map("variant_id")
+  variant     ProductVariant    @relation(fields: [variantId], references: [id])
+  quantity    Int
+  status      ReservationStatus @default(ACTIVE)
+  createdAt   DateTime          @default(now()) @map("created_at")
 
-  @@index([status, expiresAt])
-  @@index([giftId])
+  @@index([status])
   @@map("inventory_reservations")
 }
 
@@ -231,93 +318,78 @@ model StockAdjustment {
   @@map("stock_adjustments")
 }
 
-model Gift {
-  id                 String     @id @default(cuid())
-  publicRef          String     @unique @map("public_ref")
-  senderId           String     @map("sender_id")
-  sender             User       @relation(fields: [senderId], references: [id])
-  status             GiftStatus @default(PAYMENT_PENDING)
-  message            String
-  senderDisplayName  String     @map("sender_display_name")
-  isAnonymous        Boolean    @default(false) @map("is_anonymous")
-  revealTheme        String     @default("cinematic") @map("reveal_theme")
-  recipientNameHint  String?    @map("recipient_name_hint")
-  recipientPhone     String?    @map("recipient_phone")
-  currency           String     @default("INR")
-  subtotalPaise      Int        @map("subtotal_paise")
-  shippingPaise      Int        @map("shipping_paise")
-  totalPaise         Int        @map("total_paise")
-  tokenHash          String?    @unique @map("token_hash")
-  paymentExpiresAt   DateTime   @map("payment_expires_at")
-  claimExpiresAt     DateTime?  @map("claim_expires_at")
-  extensionCount     Int        @default(0) @map("extension_count")
-  checkoutAttempt    Int        @default(0) @map("checkout_attempt")
-  openedAt           DateTime?  @map("opened_at")
-  claimedAt          DateTime?  @map("claimed_at")
-  needsRefund        Boolean    @default(false) @map("needs_refund")
-  createdAt          DateTime   @default(now()) @map("created_at")
-  updatedAt          DateTime   @updatedAt @map("updated_at")
+model Order {
+  id               String      @id @default(cuid())
+  publicRef        String      @unique @map("public_ref")
+  buyerId          String      @map("buyer_id")
+  buyer            User        @relation("BuyerOrders", fields: [buyerId], references: [id])
+  creatorId        String      @map("creator_id")
+  creator          CreatorProfile @relation(fields: [creatorId], references: [id])
+  message          String      @default("")
+  contactPhone     String?     @map("contact_phone")
+  status           OrderStatus @default(PENDING_PAYMENT)
+  currency         String      @default("INR")
+  subtotalPaise    Int         @map("subtotal_paise")
+  shippingPaise    Int         @map("shipping_paise")
+  totalPaise       Int         @map("total_paise")
+  paymentExpiresAt DateTime    @map("payment_expires_at")
+  checkoutAttempt  Int         @default(0) @map("checkout_attempt")
+  channel          String      @default("web")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
 
-  items        GiftItem[]
-  events       GiftEvent[]
-  reservations InventoryReservation[]
-  payments     Payment[]
-  claim        Claim?
-  fulfilment   FulfilmentOrder?
+  items    OrderItem[]
+  payments Payment[]
 
-  @@index([senderId, createdAt])
-  @@index([status, claimExpiresAt])
-  @@map("gifts")
+  @@index([buyerId, createdAt])
+  @@index([creatorId, createdAt])
+  @@index([status, paymentExpiresAt])
+  @@map("orders")
 }
 
-model GiftItem {
-  id             String @id @default(cuid())
-  giftId         String @map("gift_id")
-  gift           Gift   @relation(fields: [giftId], references: [id], onDelete: Cascade)
-  variantId      String @map("variant_id")
-  productName    String @map("product_name")
-  variantName    String @map("variant_name")
-  imageUrl       String? @map("image_url")
+model OrderItem {
+  id             String          @id @default(cuid())
+  orderId        String          @map("order_id")
+  order          Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variantId      String          @map("variant_id")
+  productName    String          @map("product_name")
+  variantName    String          @map("variant_name")
+  imageUrl       String?         @map("image_url")
+  productType    ProductType     @map("product_type")
   quantity       Int
-  unitPricePaise Int    @map("unit_price_paise")
-  lineTotalPaise Int    @map("line_total_paise")
+  unitPricePaise Int             @map("unit_price_paise")
+  shippingPaise  Int             @map("shipping_paise")
+  lineTotalPaise Int             @map("line_total_paise")
+  status         OrderItemStatus @default(PENDING)
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
 
-  @@map("gift_items")
-}
+  reservation InventoryReservation?
+  gift        Gift?
+  refunds     Refund[]
 
-model GiftEvent {
-  id        String   @id @default(cuid())
-  giftId    String   @map("gift_id")
-  gift      Gift     @relation(fields: [giftId], references: [id], onDelete: Cascade)
-  type      String
-  fromStatus String? @map("from_status")
-  toStatus  String?  @map("to_status")
-  metadata  Json?
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@index([giftId, createdAt])
-  @@map("gift_events")
+  @@map("order_items")
 }
 
 model Payment {
-  id              String        @id @default(cuid())
-  giftId          String        @map("gift_id")
-  gift            Gift          @relation(fields: [giftId], references: [id])
-  provider        String        @default("CASHFREE")
-  providerOrderId String        @unique @map("provider_order_id")
-  paymentSessionId String?      @map("payment_session_id")
-  providerPaymentId String?     @map("provider_payment_id")
-  status          PaymentStatus @default(CREATED)
-  amountPaise     Int           @map("amount_paise")
-  currency        String        @default("INR")
-  createdAt       DateTime      @default(now()) @map("created_at")
-  updatedAt       DateTime      @updatedAt @map("updated_at")
+  id                String        @id @default(cuid())
+  orderId           String        @map("order_id")
+  order             Order         @relation(fields: [orderId], references: [id])
+  provider          String        @default("CASHFREE")
+  providerOrderId   String        @unique @map("provider_order_id")
+  paymentSessionId  String?       @map("payment_session_id")
+  providerPaymentId String?       @map("provider_payment_id")
+  status            PaymentStatus @default(CREATED)
+  amountPaise       Int           @map("amount_paise")
+  currency          String        @default("INR")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
 
   events  PaymentEvent[]
   refunds Refund[]
 
   @@index([status, updatedAt])
-  @@index([giftId])
+  @@index([orderId])
   @@map("payments")
 }
 
@@ -336,6 +408,8 @@ model Refund {
   id               String       @id @default(cuid())
   paymentId        String       @map("payment_id")
   payment          Payment      @relation(fields: [paymentId], references: [id])
+  orderItemId      String?      @map("order_item_id")
+  orderItem        OrderItem?   @relation(fields: [orderItemId], references: [id])
   providerRefundId String?      @unique @map("provider_refund_id")
   amountPaise      Int          @map("amount_paise")
   status           RefundStatus @default(PENDING)
@@ -346,60 +420,126 @@ model Refund {
   @@map("refunds")
 }
 
-model Claim {
-  id              String   @id @default(cuid())
-  giftId          String   @unique @map("gift_id")
-  gift            Gift     @relation(fields: [giftId], references: [id])
-  recipientName   String   @map("recipient_name")
-  phone           String
-  phoneVerifiedAt DateTime @map("phone_verified_at")
-  createdAt       DateTime @default(now()) @map("created_at")
-  address         ShippingAddress?
+model Gift {
+  id          String     @id @default(cuid())
+  orderItemId String     @unique @map("order_item_id")
+  orderItem   OrderItem  @relation(fields: [orderItemId], references: [id])
+  recipientId String     @map("recipient_id")
+  recipient   User       @relation("GiftRecipient", fields: [recipientId], references: [id])
+  buyerId     String     @map("buyer_id")
+  buyer       User       @relation("GiftBuyer", fields: [buyerId], references: [id])
+  status      GiftStatus @default(AWAITING_REDEMPTION)
+  openedAt    DateTime?  @map("opened_at")
+  expiresAt   DateTime   @map("expires_at")
+  remindedAt  DateTime?  @map("reminded_at")
+  needsRefund Boolean    @default(false) @map("needs_refund")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
 
-  @@map("claims")
+  events       GiftEvent[]
+  redemption   Redemption?
+  shipment     Shipment?
+  digitalAccess DigitalAccess?
+
+  @@index([recipientId, createdAt])
+  @@index([buyerId, createdAt])
+  @@index([status, expiresAt])
+  @@map("gifts")
 }
 
-model ShippingAddress {
-  id         String @id @default(cuid())
-  claimId    String @unique @map("claim_id")
-  claim      Claim  @relation(fields: [claimId], references: [id], onDelete: Cascade)
-  line1      String
-  line2      String @default("")
-  city       String
-  state      String
-  postalCode String @map("postal_code")
-  countryCode String @default("IN") @map("country_code")
+model GiftEvent {
+  id         String   @id @default(cuid())
+  giftId     String   @map("gift_id")
+  gift       Gift     @relation(fields: [giftId], references: [id], onDelete: Cascade)
+  type       String
+  fromStatus String?  @map("from_status")
+  toStatus   String?  @map("to_status")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
 
-  @@map("shipping_addresses")
+  @@index([giftId, createdAt])
+  @@map("gift_events")
 }
 
-model FulfilmentOrder {
-  id          String            @id @default(cuid())
-  giftId      String            @unique @map("gift_id")
-  gift        Gift              @relation(fields: [giftId], references: [id])
-  orderNumber String            @unique @map("order_number")
-  status      FulfilmentStatus  @default(PLACED)
+model Address {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label       String   @default("Home")
+  line1       String
+  line2       String   @default("")
+  city        String
+  state       String
+  postalCode  String   @map("postal_code")
+  countryCode String   @default("IN") @map("country_code")
+  isDefault   Boolean  @default(false) @map("is_default")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+model Redemption {
+  id         String   @id @default(cuid())
+  giftId     String   @unique @map("gift_id")
+  gift       Gift     @relation(fields: [giftId], references: [id])
+  line1      String   @default("")
+  line2      String   @default("")
+  city       String   @default("")
+  state      String   @default("")
+  postalCode String   @default("") @map("postal_code")
+  countryCode String  @default("IN") @map("country_code")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("redemptions")
+}
+
+model Shipment {
+  id          String         @id @default(cuid())
+  giftId      String         @unique @map("gift_id")
+  gift        Gift           @relation(fields: [giftId], references: [id])
+  status      ShipmentStatus @default(PENDING)
   carrier     String?
-  trackingRef String?           @map("tracking_ref")
-  createdAt   DateTime          @default(now()) @map("created_at")
-  updatedAt   DateTime          @updatedAt @map("updated_at")
-  events      FulfilmentEvent[]
+  trackingRef String?        @map("tracking_ref")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  events      ShipmentEvent[]
 
-  @@map("fulfilment_orders")
+  @@map("shipments")
 }
 
-model FulfilmentEvent {
-  id        String           @id @default(cuid())
-  orderId   String           @map("order_id")
-  order     FulfilmentOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  fromStatus String?         @map("from_status")
-  toStatus  String           @map("to_status")
-  note      String?
-  actorId   String?          @map("actor_id")
-  createdAt DateTime         @default(now()) @map("created_at")
+model ShipmentEvent {
+  id         String    @id @default(cuid())
+  shipmentId String    @map("shipment_id")
+  shipment   Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  fromStatus String?   @map("from_status")
+  toStatus   String    @map("to_status")
+  note       String?
+  actorId    String?   @map("actor_id")
+  createdAt  DateTime  @default(now()) @map("created_at")
 
-  @@index([orderId, createdAt])
-  @@map("fulfilment_events")
+  @@index([shipmentId, createdAt])
+  @@map("shipment_events")
+}
+
+model DigitalAccess {
+  id        String   @id @default(cuid())
+  giftId    String   @unique @map("gift_id")
+  gift      Gift     @relation(fields: [giftId], references: [id])
+  grantedAt DateTime @default(now()) @map("granted_at")
+  downloads DigitalDownload[]
+
+  @@map("digital_access")
+}
+
+model DigitalDownload {
+  id        String        @id @default(cuid())
+  accessId  String        @map("access_id")
+  access    DigitalAccess @relation(fields: [accessId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  @@map("digital_downloads")
 }
 
 model AuditLog {

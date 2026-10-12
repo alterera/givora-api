@@ -73,6 +73,10 @@ export class CatalogController {
         categoryId: dto.categoryId,
         occasionId: dto.occasionId,
         status: dto.status ?? 'DRAFT',
+        type: dto.type ?? 'PHYSICAL',
+        shippingPaise: dto.shippingPaise ?? 0,
+        deliveryInfo: dto.deliveryInfo,
+        refundTerms: dto.refundTerms,
       },
     });
     await this.audit.log({ actorId: user.id, action: 'product.create', entity: 'Product', entityId: product.id });
@@ -132,6 +136,28 @@ export class CatalogController {
   @Post('admin/media/presign')
   presign(@Body() dto: PresignDto) {
     return this.media.presign(dto.fileName, dto.contentType);
+  }
+
+  @Roles('ADMIN')
+  @Post('admin/media/presign-private')
+  presignPrivate(@Body() dto: PresignDto) {
+    return this.media.presignPrivate(dto.fileName, dto.contentType);
+  }
+
+  @Roles('ADMIN')
+  @Post('admin/products/:id/digital-asset')
+  async digitalAsset(
+    @Param('id') id: string,
+    @Body() dto: { storageKey: string; fileName: string; contentType: string; sizeBytes?: number },
+    @CurrentUser() user: AuthUser,
+  ) {
+    const asset = await this.prisma.digitalAsset.upsert({
+      where: { productId: id },
+      update: { storageKey: dto.storageKey, fileName: dto.fileName, contentType: dto.contentType, sizeBytes: dto.sizeBytes ?? 0 },
+      create: { productId: id, storageKey: dto.storageKey, fileName: dto.fileName, contentType: dto.contentType, sizeBytes: dto.sizeBytes ?? 0 },
+    });
+    await this.audit.log({ actorId: user.id, action: 'product.digital', entity: 'Product', entityId: id });
+    return asset;
   }
 
   @Roles('ADMIN')

@@ -4,15 +4,14 @@ import { createHash } from 'node:crypto';
 import type { AppEnv } from '../config/env.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { InventoryService } from '../inventory/inventory.service.js';
-import { GiftsService } from '../gifts/gifts.service.js';
+import { OrdersService } from '../orders/orders.service.js';
+import { TelegramSender } from '../telegram/telegram.sender.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { badRequest, notFound } from '../common/http.js';
-import { randomToken, sha256 } from '../domain/tokens.js';
-import { assertTransition } from '../domain/transitions.js';
-import { GIFT_TRANSITIONS, PAYMENT_TRANSITIONS } from '../domain/transitions.js';
+import { randomToken } from '../domain/tokens.js';
 import { CashfreeProvider } from './cashfree/cashfree.provider.js';
 import { verifyCashfreeWebhook } from './cashfree/signature.js';
-import type { CheckoutDto } from '../gifts/gifts.dto.js';
+import type { CheckoutOrderDto } from '../orders/orders.dto.js';
 
 @Injectable()
 export class PaymentsService {
@@ -20,36 +19,39 @@ export class PaymentsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly gifts: GiftsService,
+    private readonly orders: OrdersService,
     private readonly inventory: InventoryService,
     private readonly cashfree: CashfreeProvider,
+    private readonly telegram: TelegramSender,
     private readonly notifications: NotificationsService,
     private readonly config: ConfigService<AppEnv, true>,
   ) {}
 
-  async checkout(senderId: string, giftId: string, dto: CheckoutDto) {
-    const prepared = await this.gifts.prepareCheckout(senderId, giftId, dto);
-    const returnUrl = `${this.config.get('PUBLIC_WEB_URL', { infer: true })}/checkout/return?order_id={order_id}`;
+  async checkout(buyerId: string, orderId: string, dto: CheckoutOrderDto) {
+    const prepared = await this.orders.prepareCheckout(buyerId, orderId, dto.phone, dto.channel);
+    const web = this.config.get('PUBLIC_WEB_URL', { infer: true });
+    const returnPath = prepared.channel === 'telegram' ? '/tg/return' : '/return';
     const order = await this.cashfree.createOrder({
-      orderId: prepared.orderId,
-      amountPaise: prepared.gift.totalPaise,
-      currency: prepared.gift.currency,
-      customerId: senderId,
+      orderId: prepared.orderCode,
+      amountPaise: prepared.order.totalPaise,
+      currency: prepared.order.currency,
+      customerId: buyerId,
       customerPhone: prepared.phone,
       customerEmail: prepared.email,
-      returnUrl,
+      returnUrl: `${web}${returnPath}?order_id={order_id}`,
     });
     const payment = await this.prisma.payment.create({
       data: {
-        giftId,
+        orderId,
         providerOrderId: order.providerOrderId,
         paymentSessionId: order.paymentSessionId,
-        amountPaise: prepared.gift.totalPaise,
+        amountPaise: prepared.order.totalPaise,
         status: 'PENDING',
       },
     });
     return {
       paymentId: payment.id,
+      orderId,
       status: payment.status,
       checkout: {
         provider: 'CASHFREE',
@@ -59,244 +61,200 @@ export class PaymentsService {
     };
   }
 
-  async statusForSender(senderId: string, paymentId: string) {
-    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId }, include: { gift: true } });
-    if (!payment || payment.gift.senderId !== senderId) throw notFound();
+  async statusForBuyer(buyerId: string, paymentId: string) {
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId }, include: { order: true } });
+    if (!payment || payment.order.buyerId !== buyerId) throw notFound();
     return this.publicStatus(payment.id);
   }
 
-  async statusByOrder(senderId: string, orderId: string) {
+  async statusByProviderOrder(buyerId: string, providerOrderId: string) {
     const payment = await this.prisma.payment.findUnique({
-      where: { providerOrderId: orderId },
-      include: { gift: true },
+      where: { providerOrderId },
+      include: { order: true },
     });
-    if (!payment || payment.gift.senderId !== senderId) throw notFound();
+    if (!payment || payment.order.buyerId !== buyerId) throw notFound();
     if (payment.status === 'PENDING') await this.reconcilePayment(payment.id);
     return this.publicStatus(payment.id);
   }
 
   async handleWebhook(rawBody: string, timestamp?: string, signature?: string) {
     const secret = this.config.get('CASHFREE_WEBHOOK_SECRET', { infer: true });
-    const valid = verifyCashfreeWebhook({ timestamp, signature, rawBody, secret });
-    if (!valid) throw badRequest('WEBHOOK_INVALID', 'Webhook signature was rejected.');
+    if (!verifyCashfreeWebhook({ timestamp, signature, rawBody, secret })) {
+      throw badRequest('WEBHOOK_INVALID', 'Webhook signature was rejected.');
+    }
     const payload = JSON.parse(rawBody) as {
       type?: string;
-      data?: { order?: { order_id?: string }; payment?: { cf_payment_id?: string; payment_status?: string } };
+      data?: { order?: { order_id?: string }; payment?: { cf_payment_id?: string } };
     };
     const orderId = payload.data?.order?.order_id;
     if (!orderId) return { ok: true };
-    const eventId =
-      payload.data?.payment?.cf_payment_id && payload.type
-        ? `${payload.type}:${payload.data.payment.cf_payment_id}`
-        : createHash('sha256').update(rawBody).digest('hex');
+    const eventId = payload.data?.payment?.cf_payment_id && payload.type
+      ? `${payload.type}:${payload.data.payment.cf_payment_id}`
+      : createHash('sha256').update(rawBody).digest('hex');
     const existing = await this.prisma.paymentEvent.findUnique({ where: { providerEventId: eventId } });
     if (existing) return { ok: true, duplicate: true };
     const payment = await this.prisma.payment.findUnique({ where: { providerOrderId: orderId } });
     await this.prisma.paymentEvent.create({
-      data: {
-        providerEventId: eventId,
-        paymentId: payment?.id,
-        payload,
-      },
+      data: { providerEventId: eventId, paymentId: payment?.id, payload },
     });
     if (payment) await this.reconcilePayment(payment.id);
     return { ok: true };
   }
 
   async reconcilePayment(paymentId: string) {
-    const payment = await this.prisma.payment.findUnique({
-      where: { id: paymentId },
-      include: { gift: { include: { items: true, reservations: true } } },
-    });
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment || payment.status === 'PAID' || payment.status === 'FAILED') return;
     const remote = await this.cashfree.fetchPayments(payment.providerOrderId);
     if (remote.status === 'SUCCESS') {
       if (remote.amountPaise && remote.amountPaise !== payment.amountPaise) {
-        this.logger.error(`Amount mismatch for ${payment.providerOrderId}`);
+        this.logger.error(`Amount mismatch ${payment.providerOrderId}`);
         return;
       }
-      await this.markPaid(payment.id, remote.paymentId);
+      await this.confirmPaid(payment.id, remote.paymentId);
       return;
     }
     if (remote.status === 'FAILED' || remote.status === 'USER_DROPPED') {
-      await this.transitionPayment(payment.id, payment.status, 'FAILED', remote.paymentId);
+      await this.prisma.payment.updateMany({
+        where: { id: paymentId, status: 'PENDING' },
+        data: { status: 'FAILED', providerPaymentId: remote.paymentId },
+      });
     }
   }
 
-  async markPaid(paymentId: string, providerPaymentId: string | null) {
+  async confirmPaid(paymentId: string, providerPaymentId: string | null) {
     const payment = await this.prisma.payment.findUnique({
       where: { id: paymentId },
-      include: { gift: { include: { items: true, reservations: true, sender: true } } },
+      include: { order: { include: { items: true, buyer: true, creator: { include: { user: true } } } } },
     });
     if (!payment || payment.status === 'PAID') return;
-    const gift = payment.gift;
-    if (gift.status === 'PAYMENT_PENDING') {
-      await this.activateGift(payment.id, gift, providerPaymentId);
-      return;
+    const moved = await this.prisma.payment.updateMany({
+      where: { id: paymentId, status: { in: ['CREATED', 'PENDING'] } },
+      data: { status: 'PAID', providerPaymentId },
+    });
+    if (moved.count !== 1) return;
+    const confirmed = await this.prisma.order.updateMany({
+      where: { id: payment.orderId, status: 'PENDING_PAYMENT' },
+      data: { status: 'CONFIRMED' },
+    });
+    if (confirmed.count !== 1) return;
+    const days = this.config.get('GIFT_REDEEM_DAYS', { infer: true });
+    const refunds: string[] = [];
+    for (const item of payment.order.items) {
+      const gifted = await this.allocateLine(item, payment.order, days);
+      if (!gifted) refunds.push(item.id);
     }
-    if (gift.status === 'CANCELLED') {
-      await this.recoverOrRefund(payment.id, gift, providerPaymentId);
+    for (const itemId of refunds) {
+      await this.refundLine(payment.id, itemId, 'Item unavailable after payment').catch((error) => this.logger.error(error));
+    }
+    await this.telegram.notifyUser(payment.order.buyer, 'Your gift purchase was successful.', `o_${payment.orderId}`);
+    await this.telegram.notifyUser(
+      payment.order.creator.user,
+      'You received a new gift. Open GivoraWorld to unwrap it.',
+      'home',
+    );
+    if (payment.order.buyer.phone) {
+      await this.notifications.sendWhatsAppText(payment.order.buyer.phone, 'givora_order_paid', [payment.order.publicRef]);
     }
   }
 
-  async refundPayment(paymentId: string, actorId: string | null, reason: string) {
-    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId }, include: { gift: true } });
-    if (!payment || payment.status !== 'PAID') throw badRequest('NOT_REFUNDABLE', 'Only a captured payment can be refunded.');
+  private async allocateLine(
+    item: { id: string; variantId: string; quantity: number; productType: string; lineTotalPaise: number },
+    order: { id: string; buyerId: string; creator: { userId: string } },
+    days: number,
+  ) {
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        if (item.productType === 'PHYSICAL') {
+          await this.inventory.reserve(tx, item.variantId, item.quantity);
+          await tx.inventoryReservation.create({
+            data: { orderItemId: item.id, variantId: item.variantId, quantity: item.quantity, status: 'ACTIVE' },
+          });
+        }
+        const gift = await tx.gift.create({
+          data: {
+            orderItemId: item.id,
+            recipientId: order.creator.userId,
+            buyerId: order.buyerId,
+            expiresAt: new Date(Date.now() + days * 86_400_000),
+            events: { create: { type: 'CREATED', toStatus: 'AWAITING_REDEMPTION' } },
+          },
+        });
+        await tx.orderItem.update({ where: { id: item.id }, data: { status: 'GIFTED' } });
+        const variant = await tx.productVariant.findUnique({ where: { id: item.variantId } });
+        if (variant) {
+          await tx.product.update({ where: { id: variant.productId }, data: { giftedCount: { increment: item.quantity } } });
+        }
+        void gift;
+      });
+      return true;
+    } catch {
+      await this.prisma.orderItem.update({ where: { id: item.id }, data: { status: 'REFUNDED_UNAVAILABLE' } });
+      return false;
+    }
+  }
+
+  async refundLine(paymentId: string, orderItemId: string, reason: string, actorId?: string) {
+    const item = await this.prisma.orderItem.findUnique({ where: { id: orderItemId }, include: { reservation: true, gift: true } });
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!item || !payment) throw notFound();
+    if (item.reservation?.status === 'ACTIVE') {
+      await this.prisma.$transaction(async (tx) => {
+        await this.inventory.release(tx, item.variantId, item.quantity);
+        await tx.inventoryReservation.update({ where: { id: item.reservation!.id }, data: { status: 'RELEASED' } });
+      });
+    }
     const refundId = `rf_${randomToken(8)}`;
     const remote = await this.cashfree.refund({
       providerOrderId: payment.providerOrderId,
       refundId,
-      amountPaise: payment.amountPaise,
+      amountPaise: item.lineTotalPaise,
     });
-    const refund = await this.prisma.refund.create({
+    await this.prisma.refund.create({
       data: {
-        paymentId: payment.id,
+        paymentId,
+        orderItemId,
         providerRefundId: remote.providerRefundId,
-        amountPaise: payment.amountPaise,
+        amountPaise: item.lineTotalPaise,
         reason,
         status: remote.status === 'SUCCESS' ? 'SUCCESS' : 'PENDING',
       },
     });
-    if (refund.status === 'SUCCESS') {
-      await this.finishRefund(payment.giftId);
+    if (item.gift && item.gift.status !== 'REFUNDED') {
+      await this.prisma.gift.update({ where: { id: item.gift.id }, data: { status: 'REFUNDED', needsRefund: false } });
+      await this.prisma.giftEvent.create({
+        data: { giftId: item.gift.id, type: 'REFUNDED', toStatus: 'REFUNDED' },
+      });
     }
-    await this.prisma.auditLog.create({
-      data: {
-        actorId,
-        action: 'payment.refund',
-        entity: 'Payment',
-        entityId: payment.id,
-        metadata: { reason, refundId: refund.id },
-      },
-    });
-    return refund;
+    await this.refreshOrderRefundState(payment.orderId);
+    if (actorId) {
+      await this.prisma.auditLog.create({
+        data: { actorId, action: 'payment.refund', entity: 'OrderItem', entityId: orderItemId, metadata: { reason } },
+      });
+    }
+    return { refunded: true };
   }
 
-  private async activateGift(
-    paymentId: string,
-    gift: {
-      id: string;
-      status: string;
-      sender: { phone: string | null; email: string | null };
-      reservations: Array<{ id: string; variantId: string; quantity: number; status: string }>;
-    },
-    providerPaymentId: string | null,
-  ) {
-    assertTransition(GIFT_TRANSITIONS, gift.status, 'READY_TO_SEND');
-    const token = randomToken(32);
-    const days = this.config.get('CLAIM_WINDOW_DAYS', { infer: true });
-    const claimExpiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
-    await this.prisma.$transaction(async (tx) => {
-      const paymentUpdated = await tx.payment.updateMany({
-        where: { id: paymentId, status: { in: ['CREATED', 'PENDING'] } },
-        data: { status: 'PAID', providerPaymentId },
-      });
-      if (paymentUpdated.count !== 1) return;
-      for (const reservation of gift.reservations.filter((row) => row.status === 'ACTIVE')) {
-        await this.inventory.commit(tx, reservation.variantId, reservation.quantity);
-        await tx.inventoryReservation.update({
-          where: { id: reservation.id },
-          data: { status: 'COMMITTED' },
-        });
+  async refundPayment(paymentId: string, actorId: string, reason: string) {
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId }, include: { order: { include: { items: true } } } });
+    if (!payment || payment.status !== 'PAID') throw badRequest('NOT_REFUNDABLE', 'Only a captured payment can be refunded.');
+    for (const item of payment.order.items) {
+      if (item.status !== 'REFUNDED_UNAVAILABLE') {
+        await this.refundLine(paymentId, item.id, reason, actorId);
       }
-      const giftUpdated = await tx.gift.updateMany({
-        where: { id: gift.id, status: 'PAYMENT_PENDING' },
-        data: { status: 'READY_TO_SEND', tokenHash: sha256(token), claimExpiresAt },
-      });
-      if (giftUpdated.count !== 1) throw new Error('GIFT_ACTIVATE_RACE');
-      await tx.giftEvent.create({
-        data: { giftId: gift.id, type: 'PAID', fromStatus: 'PAYMENT_PENDING', toStatus: 'READY_TO_SEND' },
-      });
-      const items = await tx.giftItem.findMany({ where: { giftId: gift.id } });
-      for (const item of items) {
-        const variant = await tx.productVariant.findUnique({ where: { id: item.variantId } });
-        if (variant) {
-          await tx.product.update({
-            where: { id: variant.productId },
-            data: { giftedCount: { increment: item.quantity } },
-          });
-        }
-      }
-    });
-    const url = `${this.config.get('PUBLIC_WEB_URL', { infer: true })}/gifts/sent/${gift.id}`;
-    if (gift.sender.phone) {
-      await this.notifications.sendWhatsAppText(gift.sender.phone, 'givora_gift_ready', [url]);
     }
-    if (gift.sender.email) {
-      await this.notifications.sendEmail(
-        gift.sender.email,
-        'Your Givora gift is ready to share',
-        `Your gift is paid. Open it here to copy the redeem link: ${url}`,
-      );
-    }
-    return token;
+    return { ok: true };
   }
 
-  private async recoverOrRefund(
-    paymentId: string,
-    gift: {
-      id: string;
-      items: Array<{ variantId: string; quantity: number }>;
-    },
-    providerPaymentId: string | null,
-  ) {
-    try {
-      await this.prisma.$transaction(async (tx) => {
-        for (const item of gift.items) {
-          await this.inventory.reserve(tx, item.variantId, item.quantity);
-          await this.inventory.commit(tx, item.variantId, item.quantity);
-        }
-        const moved = await tx.gift.updateMany({
-          where: { id: gift.id, status: 'CANCELLED' },
-          data: {
-            status: 'READY_TO_SEND',
-            needsRefund: false,
-            tokenHash: sha256(randomToken(32)),
-            claimExpiresAt: new Date(Date.now() + this.config.get('CLAIM_WINDOW_DAYS', { infer: true }) * 86400000),
-          },
-        });
-        if (moved.count !== 1) throw new Error('RECOVERY_RACE');
-        await tx.payment.update({
-          where: { id: paymentId },
-          data: { status: 'PAID', providerPaymentId },
-        });
-      });
-    } catch {
-      await this.prisma.payment.update({
-        where: { id: paymentId },
-        data: { status: 'PAID', providerPaymentId },
-      });
-      await this.prisma.gift.update({ where: { id: gift.id }, data: { needsRefund: true } });
-      await this.refundPayment(paymentId, null, 'Late payment after stock was released');
-    }
-  }
-
-  private async transitionPayment(id: string, from: string, to: string, providerPaymentId: string | null) {
-    assertTransition(PAYMENT_TRANSITIONS, from, to);
-    await this.prisma.payment.updateMany({
-      where: { id, status: from as 'PENDING' },
-      data: { status: to as 'FAILED', providerPaymentId },
-    });
-  }
-
-  private async finishRefund(giftId: string) {
-    await this.prisma.gift.updateMany({
-      where: { id: giftId, status: { in: ['EXPIRED', 'REVOKED', 'CLAIMED', 'CANCELLED'] } },
-      data: { status: 'REFUNDED', needsRefund: false },
-    });
-    await this.prisma.giftEvent.create({
-      data: { giftId, type: 'REFUNDED', toStatus: 'REFUNDED' },
-    });
+  private async refreshOrderRefundState(orderId: string) {
+    const items = await this.prisma.orderItem.findMany({ where: { orderId } });
+    const refunded = items.filter((item) => item.status === 'REFUNDED_UNAVAILABLE').length;
+    const status = refunded === 0 ? undefined : refunded === items.length ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
+    if (status) await this.prisma.order.update({ where: { id: orderId }, data: { status } });
   }
 
   private async publicStatus(paymentId: string) {
-    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId }, include: { gift: true } });
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId }, include: { order: true } });
     if (!payment) throw notFound();
-    return {
-      paymentId: payment.id,
-      status: payment.status,
-      giftId: payment.giftId,
-      giftStatus: payment.gift.status,
-    };
+    return { paymentId: payment.id, status: payment.status, orderId: payment.orderId, orderStatus: payment.order.status };
   }
 }
