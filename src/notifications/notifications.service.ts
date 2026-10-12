@@ -14,11 +14,11 @@ export class NotificationsService {
   ) {}
 
   async sendOtp(phone: string, code: string) {
-    const token = this.config.get('WHATSAPP_TOKEN', { infer: true });
-    const phoneNumberId = this.config.get('WHATSAPP_PHONE_NUMBER_ID', { infer: true });
-    const template = this.config.get('WHATSAPP_OTP_TEMPLATE', { infer: true });
-    const version = this.config.get('WHATSAPP_API_VERSION', { infer: true });
-    if (!token || !phoneNumberId) {
+    const base = this.config.get('WHATSAPP_API_BASE_URL', { infer: true }).replace(/\/$/, '');
+    const apiKey = this.config.get('WHATSAPP_API_KEY', { infer: true });
+    const template = this.config.get('WHATSAPP_OTP_TEMPLATE_NAME', { infer: true });
+    const language = this.config.get('WHATSAPP_OTP_TEMPLATE_LANGUAGE', { infer: true });
+    if (!apiKey) {
       if (this.config.get('NODE_ENV', { infer: true }) !== 'production') {
         this.logger.warn(`WhatsApp OTP for ${phone.slice(0, 4)}… (dev only): ${code}`);
       }
@@ -26,24 +26,23 @@ export class NotificationsService {
       return;
     }
     const to = phone.replace(/^\+/, '');
-    const response = await fetch(`https://graph.facebook.com/${version}/${phoneNumberId}/messages`, {
+    const response = await fetch(`${base}/api/v1/whatsapp/messages`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'x-api-key': apiKey,
+        'Idempotency-Key': `givora-otp-${to}-${Date.now()}`,
       },
       body: JSON.stringify({
-        messaging_product: 'whatsapp',
         to,
         type: 'template',
-        template: {
-          name: template,
-          language: { code: 'en' },
-          components: [
-            { type: 'body', parameters: [{ type: 'text', text: code }] },
-            { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: code }] },
-          ],
-        },
+        templateName: template,
+        language,
+        components: [
+          { type: 'body', parameters: [{ type: 'text', text: code }] },
+          { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: code }] },
+        ],
       }),
     });
     if (!response.ok) {

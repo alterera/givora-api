@@ -3,11 +3,30 @@ import { ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Idempotent, Roles, type AuthUser } from '../common/decorators.js';
 import { GiftsService } from './gifts.service.js';
 import { AddressDto, RedeemDto, ShipmentStatusDto, TrackingDto } from './gifts.dto.js';
+import { OrdersService } from '../orders/orders.service.js';
+import { PaymentsService } from '../payments/payments.service.js';
+import { CheckoutOrderDto, CreateOrderDto } from '../orders/orders.dto.js';
 
 @ApiTags('gifts')
 @Controller()
 export class GiftsController {
-  constructor(private readonly gifts: GiftsService) {}
+  constructor(
+    private readonly gifts: GiftsService,
+    private readonly orders: OrdersService,
+    private readonly payments: PaymentsService,
+  ) {}
+
+  @Idempotent()
+  @Post('gifts')
+  create(@CurrentUser() user: AuthUser, @Body() dto: CreateOrderDto) {
+    return this.orders.create(user.id, dto);
+  }
+
+  @Idempotent()
+  @Post('gifts/:id/checkout')
+  pay(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: CheckoutOrderDto) {
+    return this.payments.checkout(user.id, id, dto);
+  }
 
   @Get('gifts/received')
   received(@CurrentUser() user: AuthUser) {
