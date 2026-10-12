@@ -40,6 +40,12 @@ export class CreatorsController {
   }
 
   @Public()
+  @Get('creators')
+  list() {
+    return this.creators.publicList();
+  }
+
+  @Public()
   @Get('creators/by-code/:code')
   byCode(@Param('code') code: string) {
     return this.creators.publicByCode(code);

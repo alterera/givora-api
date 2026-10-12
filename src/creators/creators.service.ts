@@ -68,6 +68,22 @@ export class CreatorsService {
     return this.mine(userId);
   }
 
+  async publicList() {
+    const profiles = await this.prisma.creatorProfile.findMany({
+      where: { status: 'APPROVED' },
+      orderBy: { displayName: 'asc' },
+      include: { _count: { select: { wishlist: { where: { isVisible: true } } } } },
+    });
+    return profiles.map((profile) => ({
+      slug: profile.slug,
+      displayName: profile.displayName,
+      bio: profile.bio,
+      giftNote: profile.giftNote,
+      avatarUrl: profile.avatarUrl,
+      itemCount: profile._count.wishlist,
+    }));
+  }
+
   async publicBySlug(slug: string) {
     return this.publicWhere({ slug });
   }
