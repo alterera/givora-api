@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsIn, IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, ValidateNested } from 'class-validator';
 
 export class OrderLineDto {
   @IsString()
@@ -7,6 +7,7 @@ export class OrderLineDto {
 
   @IsInt()
   @Min(1)
+  @Max(1)
   quantity!: number;
 }
 
@@ -16,6 +17,7 @@ export class CreateOrderDto {
 
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(1)
   @ValidateNested({ each: true })
   @Type(() => OrderLineDto)
   items!: OrderLineDto[];

@@ -20,6 +20,8 @@ export class OrdersService {
     });
     if (!creator) throw notFound('This wishlist is not available.');
     if (creator.userId === buyerId) throw badRequest('SELF_GIFT', 'You cannot buy a gift for yourself.');
+    if (dto.items.length !== 1) throw badRequest('SINGLE_ITEM', 'You can only buy one gift at a time.');
+    if (dto.items[0].quantity !== 1) throw badRequest('SINGLE_QUANTITY', 'Each gift must be quantity one.');
     const minutes = this.config.get('PAYMENT_WINDOW_MINUTES', { infer: true });
     const lines = [];
     let subtotalPaise = 0;

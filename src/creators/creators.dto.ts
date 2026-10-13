@@ -68,3 +68,14 @@ export class CreatorStatusDto {
   @IsString()
   status!: 'PENDING' | 'APPROVED' | 'SUSPENDED';
 }
+
+export class PromoteCreatorDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(40)
+  displayName!: string;
+
+  @IsString()
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  slug!: string;
+}

@@ -27,7 +27,7 @@ export class TelegramSender {
         chat_id: chatId,
         text,
         reply_markup: {
-          inline_keyboard: [[{ text: 'Open GivoraWorld', web_app: { url } }]],
+          inline_keyboard: [[{ text: 'Open Givora', web_app: { url } }]],
         },
       }),
     });

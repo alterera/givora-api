@@ -2,7 +2,14 @@ import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/commo
 import { ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Public, Roles, type AuthUser } from '../common/decorators.js';
 import { CreatorsService } from './creators.service.js';
-import { ApplyCreatorDto, CreatorStatusDto, PatchCreatorDto, WishlistAddDto, WishlistPatchDto } from './creators.dto.js';
+import {
+  ApplyCreatorDto,
+  CreatorStatusDto,
+  PatchCreatorDto,
+  PromoteCreatorDto,
+  WishlistAddDto,
+  WishlistPatchDto,
+} from './creators.dto.js';
 
 @ApiTags('creators')
 @Controller()
@@ -67,5 +74,17 @@ export class CreatorsController {
   @Patch('admin/creators/:id/status')
   status(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: CreatorStatusDto) {
     return this.creators.setStatus(id, dto.status, user.id);
+  }
+
+  @Roles('ADMIN')
+  @Get('admin/telegram-users')
+  telegramUsers() {
+    return this.creators.listTelegramUsers();
+  }
+
+  @Roles('ADMIN')
+  @Post('admin/users/:id/promote')
+  promote(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: PromoteCreatorDto) {
+    return this.creators.promoteUser(id, dto, user.id);
   }
 }

@@ -55,13 +55,19 @@ export class TelegramController {
     if (text.startsWith('/start')) {
       const session = await this.auth.loginWithTelegram(message.from, {});
       await this.auth.markBotCanMessage(session.user.id);
-      const code = text.split(' ')[1];
-      const start = code ? `c_${code.replace(/^c_/, '')}` : undefined;
-      await this.sender.sendMessage(
-        chatId,
-        'Open GivoraWorld to send or redeem a gift.',
-        start,
-      );
+      const payload = text.split(/\s+/)[1]?.trim();
+      const startParam = payload ? (payload.startsWith('c_') ? payload : `c_${payload}`) : undefined;
+      const name = message.from.first_name?.trim() || 'there';
+      const welcome = [
+        `Hi ${name}!`,
+        '',
+        'GivoraWorld is private gifting for creators.',
+        '• Fans send a gift from a creator’s wishlist link',
+        '• Creators redeem gifts and keep their address private',
+        '',
+        'Tap below to open the app.',
+      ].join('\n');
+      await this.sender.sendMessage(chatId, welcome, startParam);
     }
     return { ok: true };
   }

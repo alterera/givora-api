@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../database/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { badRequest, forbidden, notFound } from '../common/http.js';
-import type { ApplyCreatorDto, PatchCreatorDto } from './creators.dto.js';
+import type { ApplyCreatorDto, PatchCreatorDto, PromoteCreatorDto } from './creators.dto.js';
 
 const RESERVED = new Set([
   'admin', 'tg', 'orders', 'creator', 'legal', 'api', 'login', 'register', 'checkout', 'gifts', 'account', 'g',
@@ -133,6 +133,43 @@ export class CreatorsService {
       data: { status, approvedAt: status === 'APPROVED' ? new Date() : undefined },
     });
     await this.audit.log({ actorId, action: 'creator.status', entity: 'CreatorProfile', entityId: id, metadata: { status } });
+    return profile;
+  }
+
+  async listTelegramUsers() {
+    const users = await this.prisma.user.findMany({
+      where: { telegramId: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      include: { creator: { select: { id: true, slug: true, status: true, displayName: true } } },
+    });
+    return users.map((user) => ({
+      id: user.id,
+      displayName: user.displayName,
+      telegramUsername: user.telegramUsername,
+      telegramId: user.telegramId,
+      createdAt: user.createdAt,
+      creatorProfile: user.creator,
+    }));
+  }
+
+  async promoteUser(userId: string, dto: PromoteCreatorDto, actorId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.telegramId) throw badRequest('NO_TELEGRAM', 'This user has not opened the Telegram app yet.');
+    if (RESERVED.has(dto.slug)) throw badRequest('SLUG_RESERVED', 'Choose another public name.');
+    const existing = await this.prisma.creatorProfile.findUnique({ where: { userId } });
+    if (existing) throw badRequest('PROFILE_EXISTS', 'This user already has a creator profile.');
+    const slugTaken = await this.prisma.creatorProfile.findUnique({ where: { slug: dto.slug } });
+    if (slugTaken) throw badRequest('SLUG_TAKEN', 'That public name is already in use.');
+    const profile = await this.prisma.creatorProfile.create({
+      data: {
+        userId,
+        slug: dto.slug,
+        shortCode: `c_${randomBytes(4).toString('hex')}`,
+        displayName: dto.displayName.trim(),
+        status: 'PENDING',
+      },
+    });
+    await this.audit.log({ actorId, action: 'creator.promote', entity: 'CreatorProfile', entityId: profile.id, metadata: { userId } });
     return profile;
   }
 
