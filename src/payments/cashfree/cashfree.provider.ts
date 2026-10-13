@@ -35,6 +35,36 @@ export class CashfreeProvider implements PaymentProvider {
     return `${web}/pay/cashfree?${query.toString()}`;
   }
 
+  private clientEnvHeaders() {
+    return {
+      'x-client-device': 'mobile',
+      'x-client-os': 'android',
+      'x-client-rendering-type': 'native',
+      'x-client-browser': 'others',
+    };
+  }
+
+  async orderSessionPay(paymentSessionId: string, paymentMethod: Record<string, unknown>) {
+    const response = await fetch(`${this.baseUrl()}/orders/sessions`, {
+      method: 'POST',
+      headers: { ...this.headers(), ...this.clientEnvHeaders() },
+      body: JSON.stringify({ payment_session_id: paymentSessionId, payment_method: paymentMethod }),
+    });
+    const body = (await response.json()) as Record<string, unknown> & { message?: string };
+    if (!response.ok) {
+      throw badRequest('CASHFREE_PAY_FAILED', (body.message as string) ?? 'Cashfree could not start this payment.');
+    }
+    return body;
+  }
+
+  async createUpiQrPayment(paymentSessionId: string) {
+    return this.orderSessionPay(paymentSessionId, { upi: { channel: 'qrcode' } });
+  }
+
+  async createUpiLinkPayment(paymentSessionId: string) {
+    return this.orderSessionPay(paymentSessionId, { upi: { channel: 'link' } });
+  }
+
   async createOrder(input: Parameters<PaymentProvider['createOrder']>[0]) {
     const response = await fetch(`${this.baseUrl()}/orders`, {
       method: 'POST',

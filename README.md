@@ -27,7 +27,7 @@ PUBLIC_API_URL=https://api.givoraworld.com npx tsx scripts/set-telegram-webhook.
 
 Create a private MinIO bucket `givora-private` with no anonymous access. Product photos stay in the public `givora-media` bucket.
 
-Test Cashfree UPI inside the Telegram webview on Android and iOS. If an app intent does not return, the checkout falls back to `WebApp.openLink`.
+Telegram checkout sends a UPI QR in the bot chat (Cashfree Order Pay API). Ask Cashfree to enable **S2S** on your merchant account for `POST /pg/orders/sessions`. Web checkout still uses the Cashfree JS SDK in the browser.
 
 ## Production
 

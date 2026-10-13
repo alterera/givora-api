@@ -40,6 +40,37 @@ export class TelegramSender {
     await this.sendMessage(user.telegramId, text, startParam);
   }
 
+  async sendPhotoBuffer(chatId: string | number, image: Buffer, caption: string) {
+    const token = this.config.get('TELEGRAM_BOT_TOKEN', { infer: true });
+    if (!token) {
+      await this.log(String(chatId), 'skipped', 'missing bot token');
+      return false;
+    }
+    const form = new FormData();
+    form.append('chat_id', String(chatId));
+    form.append('caption', caption.slice(0, 1024));
+    form.append('photo', new Blob([new Uint8Array(image)], { type: 'image/png' }), 'payment-qr.png');
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: form });
+    await this.log(String(chatId), response.ok ? 'sent' : 'failed', response.ok ? undefined : await response.text());
+    if (!response.ok) this.logger.warn('Telegram photo failed');
+    return response.ok;
+  }
+
+  async sendPlainMessage(chatId: string | number, text: string, buttonUrl?: string) {
+    const token = this.config.get('TELEGRAM_BOT_TOKEN', { infer: true });
+    if (!token) return false;
+    const reply_markup = buttonUrl
+      ? { inline_keyboard: [[{ text: 'Open payment', url: buttonUrl }]] }
+      : undefined;
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, reply_markup }),
+    });
+    await this.log(String(chatId), response.ok ? 'sent' : 'failed', response.ok ? undefined : await response.text());
+    return response.ok;
+  }
+
   private async log(to: string, status: string, error?: string) {
     await this.prisma.notificationLog.create({
       data: { channel: 'telegram', to: to.slice(0, 8), template: 'message', status, error: error?.slice(0, 300) },
