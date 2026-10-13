@@ -22,6 +22,11 @@ export class PaymentsController {
     return this.payments.statusByProviderOrder(user.id, orderId);
   }
 
+  @Get('payments/orders/:orderId/status')
+  orderStatus(@CurrentUser() user: AuthUser, @Param('orderId') orderId: string) {
+    return this.payments.statusForOrder(user.id, orderId);
+  }
+
   @Public()
   @SkipCsrf()
   @Post('webhooks/cashfree')

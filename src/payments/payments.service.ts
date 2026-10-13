@@ -49,6 +49,7 @@ export class PaymentsService {
         status: 'PENDING',
       },
     });
+    const mode = this.config.get('CASHFREE_ENV', { infer: true });
     return {
       paymentId: payment.id,
       orderId,
@@ -56,9 +57,22 @@ export class PaymentsService {
       checkout: {
         provider: 'CASHFREE',
         sessionId: order.paymentSessionId,
-        mode: this.config.get('CASHFREE_ENV', { infer: true }),
+        mode,
+        hostedUrl: this.cashfree.hostedCheckoutUrl(order.paymentSessionId),
       },
     };
+  }
+
+  async statusForOrder(buyerId: string, orderId: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { payments: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    });
+    if (!order || order.buyerId !== buyerId) throw notFound();
+    const payment = order.payments[0];
+    if (!payment) throw notFound('No payment started for this order.');
+    if (payment.status === 'PENDING') await this.reconcilePayment(payment.id);
+    return this.publicStatus(payment.id);
   }
 
   async statusForBuyer(buyerId: string, paymentId: string) {

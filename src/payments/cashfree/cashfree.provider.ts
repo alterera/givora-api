@@ -27,6 +27,14 @@ export class CashfreeProvider implements PaymentProvider {
     };
   }
 
+  hostedCheckoutUrl(paymentSessionId: string) {
+    const encoded = encodeURIComponent(paymentSessionId);
+    if (this.config.get('CASHFREE_ENV', { infer: true }) === 'sandbox') {
+      return `https://sandbox.cashfree.com/pg/view/sessions/checkout/web/${encoded}`;
+    }
+    return `https://payments.cashfree.com/order/#${encoded}`;
+  }
+
   async createOrder(input: Parameters<PaymentProvider['createOrder']>[0]) {
     const response = await fetch(`${this.baseUrl()}/orders`, {
       method: 'POST',
