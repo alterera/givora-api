@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import nodemailer from 'nodemailer';
 import type { AppEnv } from '../config/env.js';
 import { PrismaService } from '../database/prisma.service.js';
+import { badRequest } from '../common/http.js';
 
 @Injectable()
 export class NotificationsService {
@@ -15,7 +16,7 @@ export class NotificationsService {
 
   async sendOtp(phone: string, code: string) {
     const base = this.config.get('WHATSAPP_API_BASE_URL', { infer: true }).replace(/\/$/, '');
-    const apiKey = this.config.get('WHATSAPP_API_KEY', { infer: true });
+    const apiKey = this.config.get('WHATSAPP_API_KEY', { infer: true }).trim().replace(/>$/, '');
     const template = this.config.get('WHATSAPP_OTP_TEMPLATE_NAME', { infer: true });
     const language = this.config.get('WHATSAPP_OTP_TEMPLATE_LANGUAGE', { infer: true });
     if (!apiKey) {
@@ -47,9 +48,9 @@ export class NotificationsService {
     });
     if (!response.ok) {
       const error = await response.text();
-      await this.log('whatsapp', phone, template, 'failed', error.slice(0, 500));
-      this.logger.error('WhatsApp send failed');
-      return;
+      await this.log('whatsapp', phone, template, 'failed', `${response.status} ${error.slice(0, 400)}`);
+      this.logger.error(`WhatsApp send failed with HTTP ${response.status}`);
+      throw badRequest('OTP_DELIVERY_FAILED', 'Could not send the WhatsApp code. Try again shortly.');
     }
     await this.log('whatsapp', phone, template, 'sent');
   }

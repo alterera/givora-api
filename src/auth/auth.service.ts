@@ -225,20 +225,21 @@ export class AuthService {
   }
 
   async loginWithTelegram(
-    profile: { id: number | string; username?: string; first_name?: string },
+    profile: { id: number | string; username?: string; first_name?: string; last_name?: string },
     meta: { ip?: string; userAgent?: string },
   ) {
     const telegramId = String(profile.id);
+    const displayName = [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'Telegram user';
     const user = await this.prisma.user.upsert({
       where: { telegramId },
       update: {
         telegramUsername: profile.username,
-        displayName: profile.first_name,
+        displayName,
       },
       create: {
         telegramId,
         telegramUsername: profile.username,
-        displayName: profile.first_name ?? 'Telegram user',
+        displayName,
       },
     });
     const session = await this.createSession(user.id, randomToken(16), meta);
@@ -328,6 +329,8 @@ export class AuthService {
       email: user.email,
       phone: user.phone,
       displayName: user.displayName,
+      telegramUsername: user.telegramUsername,
+      createdAt: user.createdAt.toISOString(),
       role: user.role,
       emailVerified: Boolean(user.emailVerifiedAt),
       phoneVerified: Boolean(user.phoneVerifiedAt),
