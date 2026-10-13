@@ -27,12 +27,12 @@ export class CashfreeProvider implements PaymentProvider {
     };
   }
 
+  /** Cashfree sessions must be opened via the JS SDK (or Order Pay API), not a hand-built PG URL. */
   hostedCheckoutUrl(paymentSessionId: string) {
-    const encoded = encodeURIComponent(paymentSessionId);
-    if (this.config.get('CASHFREE_ENV', { infer: true }) === 'sandbox') {
-      return `https://sandbox.cashfree.com/pg/view/sessions/checkout/web/${encoded}`;
-    }
-    return `https://payments.cashfree.com/order/#${encoded}`;
+    const web = this.config.get('PUBLIC_WEB_URL', { infer: true }).replace(/\/$/, '');
+    const mode = this.config.get('CASHFREE_ENV', { infer: true });
+    const query = new URLSearchParams({ paymentSessionId, mode });
+    return `${web}/pay/cashfree?${query.toString()}`;
   }
 
   async createOrder(input: Parameters<PaymentProvider['createOrder']>[0]) {
