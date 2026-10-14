@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Roles, type AuthUser } from '../common/decorators.js';
 import { CosmeticsService } from './cosmetics.service.js';
@@ -32,6 +32,18 @@ export class CosmeticsController {
   @Post('aura/cosmetics/unequip')
   unequip(@CurrentUser() user: AuthUser, @Body() dto: CosmeticUnequipDto) {
     return this.cosmetics.unequip(user.id, dto.kind);
+  }
+
+  @Roles('ADMIN')
+  @Get('admin/cosmetics')
+  adminItems() {
+    return this.cosmetics.adminListItems();
+  }
+
+  @Roles('ADMIN')
+  @Get('admin/cosmetics/purchases')
+  adminPurchases() {
+    return this.cosmetics.adminListPurchases();
   }
 
   @Roles('ADMIN')

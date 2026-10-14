@@ -180,6 +180,51 @@ export class CosmeticsService {
     });
   }
 
+  async adminListItems() {
+    const items = await this.prisma.cosmeticItem.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      include: {
+        _count: { select: { owners: true, purchases: true } },
+      },
+    });
+    return items.map((item) => ({
+      id: item.id,
+      slug: item.slug,
+      name: item.name,
+      description: item.description,
+      kind: item.kind,
+      pricePaise: item.pricePaise,
+      active: item.active,
+      sortOrder: item.sortOrder,
+      ownerCount: item._count.owners,
+      purchaseCount: item._count.purchases,
+    }));
+  }
+
+  async adminListPurchases(take = 50) {
+    const rows = await this.prisma.cosmeticPurchase.findMany({
+      take,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        item: { select: { slug: true, name: true } },
+        user: { select: { id: true, displayName: true, telegramUsername: true } },
+      },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      status: row.status,
+      amountPaise: row.amountPaise,
+      providerOrderId: row.providerOrderId,
+      createdAt: row.createdAt.toISOString(),
+      item: row.item,
+      user: {
+        id: row.user.id,
+        displayName: row.user.displayName,
+        telegramUsername: row.user.telegramUsername,
+      },
+    }));
+  }
+
   async revokePurchase(purchaseId: string) {
     const purchase = await this.prisma.cosmeticPurchase.findUnique({ where: { id: purchaseId } });
     if (!purchase || purchase.status !== 'PAID') throw badRequest('NOT_REVOKABLE', 'Only a paid cosmetic purchase can be revoked.');
