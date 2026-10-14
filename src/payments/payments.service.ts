@@ -95,7 +95,9 @@ export class PaymentsService {
   }
 
   async handleWebhook(rawBody: string, timestamp?: string, signature?: string) {
-    const secret = this.config.get('CASHFREE_WEBHOOK_SECRET', { infer: true });
+    const secret =
+      this.config.get('CASHFREE_WEBHOOK_SECRET', { infer: true }) ||
+      this.config.get('CASHFREE_SECRET_KEY', { infer: true });
     if (!verifyCashfreeWebhook({ timestamp, signature, rawBody, secret })) {
       throw badRequest('WEBHOOK_INVALID', 'Webhook signature was rejected.');
     }

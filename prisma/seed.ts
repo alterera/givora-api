@@ -9,6 +9,16 @@ const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) })
 
 const products = [
   {
+    name: 'Classic Creator Postcard',
+    slug: 'classic-creator-postcard',
+    description: 'A signature ₹1 Givora thank-you token to test instant creator gifting.',
+    story: 'A small gesture to brighten a creator’s day.',
+    occasion: 'thank-you',
+    category: 'home',
+    pricePaise: 100,
+    sku: 'GIFT-1RS',
+  },
+  {
     name: 'Brass Diya Set',
     slug: 'brass-diya-set',
     description: 'A pair of hand-finished brass diyas, packed ready to light.',
@@ -122,7 +132,7 @@ async function main() {
       approvedAt: new Date(),
     },
   });
-  const variants = await prisma.productVariant.findMany({ take: 3 });
+  const variants = await prisma.productVariant.findMany({ orderBy: { pricePaise: 'asc' }, take: 4 });
   for (const [index, variant] of variants.entries()) {
     await prisma.wishlistItem.upsert({
       where: { creatorId_variantId: { creatorId: creator.id, variantId: variant.id } },
