@@ -9,11 +9,8 @@ import { TelegramSender } from '../telegram/telegram.sender.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { badRequest, notFound } from '../common/http.js';
 import { randomToken } from '../domain/tokens.js';
-import QRCode from 'qrcode';
 import { CashfreeProvider } from './cashfree/cashfree.provider.js';
-import { extractPaymentUrl, extractUpiQrPayload } from './cashfree/parse-pay-response.js';
 import { verifyCashfreeWebhook } from './cashfree/signature.js';
-import { paiseToRupees } from '../domain/money.js';
 import type { CheckoutOrderDto } from '../orders/orders.dto.js';
 
 @Injectable()
@@ -53,7 +50,7 @@ export class PaymentsService {
       },
     });
     const mode = this.config.get('CASHFREE_ENV', { infer: true });
-    const payload = {
+    return {
       paymentId: payment.id,
       orderId,
       status: payment.status,
@@ -63,75 +60,7 @@ export class PaymentsService {
         mode,
         hostedUrl: this.cashfree.hostedCheckoutUrl(order.paymentSessionId),
       },
-      telegramPayment: undefined as { sent: boolean } | undefined,
     };
-    if (prepared.channel === 'telegram') {
-      const buyer = await this.prisma.user.findUnique({ where: { id: buyerId } });
-      if (!buyer?.telegramId) {
-        throw badRequest('TELEGRAM_REQUIRED', 'Open GivoraWorld from Telegram to pay for this gift.');
-      }
-      await this.deliverTelegramPayment(buyer, payment, prepared.order, order.paymentSessionId);
-      payload.telegramPayment = { sent: true };
-    }
-    return payload;
-  }
-
-  private async deliverTelegramPayment(
-    buyer: { telegramId: string | null },
-    payment: { providerOrderId: string; amountPaise: number },
-    order: { publicRef: string },
-    paymentSessionId: string,
-  ) {
-    if (!buyer.telegramId) throw badRequest('TELEGRAM_REQUIRED', 'Telegram account not linked.');
-    const amount = paiseToRupees(payment.amountPaise);
-    const caption = [
-      'Complete your GivoraWorld gift payment',
-      '',
-      `Amount: ₹${amount}`,
-      `Order: ${order.publicRef}`,
-      '',
-      'Scan this QR with any UPI app.',
-      'We will confirm payment in the Mini App automatically.',
-    ].join('\n');
-    let sent = false;
-    try {
-      const qrResponse = await this.cashfree.createUpiQrPayment(paymentSessionId);
-      const payload = extractUpiQrPayload(qrResponse);
-      if (payload) {
-        let png: Buffer;
-        if (payload.startsWith('data:image')) {
-          png = Buffer.from(payload.replace(/^data:image\/\w+;base64,/, ''), 'base64');
-        } else if (/^[A-Za-z0-9+/=]{200,}$/.test(payload.replace(/\s/g, ''))) {
-          png = Buffer.from(payload.replace(/\s/g, ''), 'base64');
-        } else {
-          png = await QRCode.toBuffer(payload, { width: 480, margin: 2 });
-        }
-        sent = await this.telegram.sendPhotoBuffer(buyer.telegramId, png, caption);
-      }
-    } catch (error) {
-      this.logger.warn(`Cashfree UPI QR failed: ${error}`);
-    }
-    if (!sent) {
-      try {
-        const linkResponse = await this.cashfree.createUpiLinkPayment(paymentSessionId);
-        const url = extractPaymentUrl(linkResponse);
-        if (url) {
-          sent = await this.telegram.sendPlainMessage(
-            buyer.telegramId,
-            `${caption}\n\nTap the button below to pay with UPI.`,
-            url,
-          );
-        }
-      } catch (error) {
-        this.logger.warn(`Cashfree UPI link failed: ${error}`);
-      }
-    }
-    if (!sent) {
-      throw badRequest(
-        'TELEGRAM_PAY_FAILED',
-        'Could not create a UPI payment on Telegram. Ensure Cashfree S2S/UPI is enabled for your account, then try again.',
-      );
-    }
   }
 
   async statusForOrder(buyerId: string, orderId: string) {
