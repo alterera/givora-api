@@ -15,7 +15,10 @@ const schema = z.object({
   PAYMENT_WINDOW_MINUTES: z.coerce.number().default(30),
   GIFT_REDEEM_DAYS: z.coerce.number().default(30),
   GIFT_REMINDER_DAYS: z.coerce.number().default(7),
-  CASHFREE_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
+  CASHFREE_ENV: z.preprocess(
+    (val) => (typeof val === 'string' ? val.trim().toLowerCase() : val),
+    z.enum(['sandbox', 'production']).default('sandbox'),
+  ),
   CASHFREE_APP_ID: z.string().default(''),
   CASHFREE_SECRET_KEY: z.string().default(''),
   CASHFREE_API_VERSION: z.string().default('2025-01-01'),

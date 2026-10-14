@@ -5,6 +5,8 @@ import { paiseToRupees } from '../../domain/money.js';
 import { badRequest } from '../../common/http.js';
 import type { PaymentProvider, ProviderPayment } from '../payment-provider.js';
 
+const API_TIMEOUT_MS = 8_000;
+
 @Injectable()
 export class CashfreeProvider implements PaymentProvider {
   constructor(private readonly config: ConfigService<AppEnv, true>) {}
@@ -27,48 +29,20 @@ export class CashfreeProvider implements PaymentProvider {
     };
   }
 
-  /** Cashfree sessions must be opened via the JS SDK (or Order Pay API), not a hand-built PG URL. */
-  hostedCheckoutUrl(paymentSessionId: string) {
+  /** Cashfree sessions must be opened via the JS SDK on our domain. */
+  hostedCheckoutUrl(paymentSessionId: string, orderId?: string) {
     const web = this.config.get('PUBLIC_WEB_URL', { infer: true }).replace(/\/$/, '');
     const mode = this.config.get('CASHFREE_ENV', { infer: true });
     const query = new URLSearchParams({ paymentSessionId, mode });
+    if (orderId) query.set('orderId', orderId);
     return `${web}/pay/cashfree?${query.toString()}`;
-  }
-
-  private clientEnvHeaders() {
-    return {
-      'x-client-device': 'mobile',
-      'x-client-os': 'android',
-      'x-client-rendering-type': 'native',
-      'x-client-browser': 'others',
-    };
-  }
-
-  async orderSessionPay(paymentSessionId: string, paymentMethod: Record<string, unknown>) {
-    const response = await fetch(`${this.baseUrl()}/orders/sessions`, {
-      method: 'POST',
-      headers: { ...this.headers(), ...this.clientEnvHeaders() },
-      body: JSON.stringify({ payment_session_id: paymentSessionId, payment_method: paymentMethod }),
-    });
-    const body = (await response.json()) as Record<string, unknown> & { message?: string };
-    if (!response.ok) {
-      throw badRequest('CASHFREE_PAY_FAILED', (body.message as string) ?? 'Cashfree could not start this payment.');
-    }
-    return body;
-  }
-
-  async createUpiQrPayment(paymentSessionId: string) {
-    return this.orderSessionPay(paymentSessionId, { upi: { channel: 'qrcode' } });
-  }
-
-  async createUpiLinkPayment(paymentSessionId: string) {
-    return this.orderSessionPay(paymentSessionId, { upi: { channel: 'link' } });
   }
 
   async createOrder(input: Parameters<PaymentProvider['createOrder']>[0]) {
     const response = await fetch(`${this.baseUrl()}/orders`, {
       method: 'POST',
       headers: this.headers(),
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
       body: JSON.stringify({
         order_id: input.orderId,
         order_amount: paiseToRupees(input.amountPaise),
@@ -93,32 +67,56 @@ export class CashfreeProvider implements PaymentProvider {
   }
 
   async fetchPayments(providerOrderId: string): Promise<ProviderPayment> {
-    const response = await fetch(`${this.baseUrl()}/orders/${encodeURIComponent(providerOrderId)}/payments`, {
-      headers: this.headers(),
-    });
-    if (!response.ok) {
-      return { paymentId: null, status: 'PENDING', amountPaise: 0 };
+    const encoded = encodeURIComponent(providerOrderId);
+    const [orderRes, paymentsRes] = await Promise.all([
+      fetch(`${this.baseUrl()}/orders/${encoded}`, {
+        headers: this.headers(),
+        signal: AbortSignal.timeout(API_TIMEOUT_MS),
+      }).catch(() => null),
+      fetch(`${this.baseUrl()}/orders/${encoded}/payments`, {
+        headers: this.headers(),
+        signal: AbortSignal.timeout(API_TIMEOUT_MS),
+      }).catch(() => null),
+    ]);
+
+    const orderBody = orderRes?.ok
+      ? ((await orderRes.json()) as { order_status?: string; order_amount?: number })
+      : null;
+
+    if (paymentsRes?.ok) {
+      const rows = (await paymentsRes.json()) as Array<{
+        cf_payment_id?: string | number;
+        payment_status?: string;
+        payment_amount?: number;
+      }>;
+      const success = rows.find((row) => row.payment_status === 'SUCCESS');
+      const latest = success ?? rows[0];
+      if (latest) {
+        const status = (latest.payment_status ?? 'PENDING') as ProviderPayment['status'];
+        return {
+          paymentId: latest.cf_payment_id ? String(latest.cf_payment_id) : null,
+          status,
+          amountPaise: Math.round((latest.payment_amount ?? 0) * 100),
+        };
+      }
     }
-    const rows = (await response.json()) as Array<{
-      cf_payment_id?: string | number;
-      payment_status?: string;
-      payment_amount?: number;
-    }>;
-    const success = rows.find((row) => row.payment_status === 'SUCCESS');
-    const latest = success ?? rows[0];
-    if (!latest) return { paymentId: null, status: 'NOT_ATTEMPTED', amountPaise: 0 };
-    const status = (latest.payment_status ?? 'PENDING') as ProviderPayment['status'];
-    return {
-      paymentId: latest.cf_payment_id ? String(latest.cf_payment_id) : null,
-      status,
-      amountPaise: Math.round((latest.payment_amount ?? 0) * 100),
-    };
+
+    if (orderBody?.order_status === 'PAID') {
+      return {
+        paymentId: null,
+        status: 'SUCCESS',
+        amountPaise: Math.round((orderBody.order_amount ?? 0) * 100),
+      };
+    }
+
+    return { paymentId: null, status: 'NOT_ATTEMPTED', amountPaise: 0 };
   }
 
   async refund(input: { providerOrderId: string; refundId: string; amountPaise: number }) {
     const response = await fetch(`${this.baseUrl()}/orders/${encodeURIComponent(input.providerOrderId)}/refunds`, {
       method: 'POST',
       headers: this.headers(),
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
       body: JSON.stringify({
         refund_amount: paiseToRupees(input.amountPaise),
         refund_id: input.refundId,

@@ -38,7 +38,7 @@ export class PaymentsService {
       customerId: buyerId,
       customerPhone: prepared.phone,
       customerEmail: prepared.email,
-      returnUrl: `${web}${returnPath}?order_id={order_id}`,
+      returnUrl: `${web}${returnPath}?orderId=${encodeURIComponent(orderId)}&order_id={order_id}`,
     });
     const payment = await this.prisma.payment.create({
       data: {
@@ -58,21 +58,24 @@ export class PaymentsService {
         provider: 'CASHFREE',
         sessionId: order.paymentSessionId,
         mode,
-        hostedUrl: this.cashfree.hostedCheckoutUrl(order.paymentSessionId),
+        hostedUrl: this.cashfree.hostedCheckoutUrl(order.paymentSessionId, orderId),
       },
     };
   }
 
-  async statusForOrder(buyerId: string, orderId: string) {
+  async statusForOrder(buyerId: string, orderIdOrProviderId: string) {
     const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
+      where: { id: orderIdOrProviderId },
       include: { payments: { orderBy: { createdAt: 'desc' }, take: 1 } },
     });
-    if (!order || order.buyerId !== buyerId) throw notFound();
-    const payment = order.payments[0];
-    if (!payment) throw notFound('No payment started for this order.');
-    if (payment.status === 'PENDING') await this.reconcilePayment(payment.id);
-    return this.publicStatus(payment.id);
+    if (order) {
+      if (order.buyerId !== buyerId) throw notFound();
+      const payment = order.payments[0];
+      if (!payment) throw notFound('No payment started for this order.');
+      if (payment.status === 'PENDING') await this.reconcilePayment(payment.id);
+      return this.publicStatus(payment.id);
+    }
+    return this.statusByProviderOrder(buyerId, orderIdOrProviderId);
   }
 
   async statusForBuyer(buyerId: string, paymentId: string) {
