@@ -19,10 +19,10 @@ Guest senders and recipients verify with a WhatsApp one-time code. In developmen
 
 ## Telegram Mini App
 
-Create `@GivoraWorldBot` in BotFather. Set the Main Mini App URL to `https://givoraworld.com/tg` and the menu button to the same URL. Then register the webhook:
+Create `@GivoraWorldBot` in BotFather. Set the Main Mini App URL to `https://yoursite.com/tg` and the menu button to the same URL. Then register the webhook:
 
 ```bash
-PUBLIC_API_URL=https://api.givoraworld.com npx tsx scripts/set-telegram-webhook.ts
+PUBLIC_API_URL=https://api.yoursite.com npx tsx scripts/set-telegram-webhook.ts
 ```
 
 Create a private MinIO bucket `givora-private` with no anonymous access. Product photos stay in the public `givora-media` bucket.

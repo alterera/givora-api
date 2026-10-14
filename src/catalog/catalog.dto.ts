@@ -95,6 +95,21 @@ export class UpdateProductDto {
   occasionId?: string;
 }
 
+export class UpdateVariantDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  sku?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  pricePaise?: number;
+}
+
 export class CreateVariantDto {
   @IsString()
   sku!: string;

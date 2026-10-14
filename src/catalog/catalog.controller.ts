@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Public, Roles, type AuthUser } from '../common/decorators.js';
 import { PrismaService } from '../database/prisma.service.js';
@@ -15,6 +15,7 @@ import {
   RegisterImageDto,
   StockAdjustDto,
   UpdateProductDto,
+  UpdateVariantDto,
 } from './catalog.dto.js';
 
 @ApiTags('catalogue')
@@ -164,9 +165,38 @@ export class CatalogController {
   @Get('admin/products')
   adminProducts() {
     return this.prisma.product.findMany({
-      include: { variants: true, images: true, category: true, occasion: true },
+      include: { variants: true, images: { orderBy: { sortOrder: 'asc' } }, category: true, occasion: true },
       orderBy: { updatedAt: 'desc' },
     });
+  }
+
+  @Roles('ADMIN')
+  @Get('admin/products/:id')
+  adminProduct(@Param('id') id: string) {
+    return this.prisma.product.findUniqueOrThrow({
+      where: { id },
+      include: { variants: true, images: { orderBy: { sortOrder: 'asc' } }, category: true, occasion: true },
+    });
+  }
+
+  @Roles('ADMIN')
+  @Patch('admin/variants/:id')
+  async updateVariant(@Param('id') id: string, @Body() dto: UpdateVariantDto, @CurrentUser() user: AuthUser) {
+    const variant = await this.prisma.productVariant.update({ where: { id }, data: dto });
+    await this.audit.log({ actorId: user.id, action: 'variant.update', entity: 'ProductVariant', entityId: id });
+    return variant;
+  }
+
+  @Roles('ADMIN')
+  @Delete('admin/products/:productId/images/:imageId')
+  async deleteImage(
+    @Param('productId') productId: string,
+    @Param('imageId') imageId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.prisma.productImage.deleteMany({ where: { id: imageId, productId } });
+    await this.audit.log({ actorId: user.id, action: 'product.image.delete', entity: 'Product', entityId: productId });
+    return { ok: true };
   }
 
   @Roles('ADMIN')
