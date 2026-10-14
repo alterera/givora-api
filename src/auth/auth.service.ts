@@ -38,6 +38,8 @@ export class AuthService {
       PAYMENT_WINDOW_MINUTES: this.config.get('PAYMENT_WINDOW_MINUTES', { infer: true }),
       GIFT_REDEEM_DAYS: this.config.get('GIFT_REDEEM_DAYS', { infer: true }),
       GIFT_REMINDER_DAYS: this.config.get('GIFT_REMINDER_DAYS', { infer: true }),
+      AURA_INVITE_POINTS: this.config.get('AURA_INVITE_POINTS', { infer: true }),
+      AURA_PAISE_PER_POINT: this.config.get('AURA_PAISE_PER_POINT', { infer: true }),
       CASHFREE_ENV: this.config.get('CASHFREE_ENV', { infer: true }),
       CASHFREE_APP_ID: this.config.get('CASHFREE_APP_ID', { infer: true }),
       CASHFREE_SECRET_KEY: this.config.get('CASHFREE_SECRET_KEY', { infer: true }),

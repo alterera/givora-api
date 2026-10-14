@@ -140,6 +140,59 @@ async function main() {
       create: { creatorId: creator.id, variantId: variant.id, sortOrder: index },
     });
   }
+
+  const cosmetics = [
+    {
+      slug: 'frame-spark',
+      name: 'Spark Frame',
+      description: 'A soft glow for new supporters.',
+      kind: 'FRAME' as const,
+      pricePaise: 0,
+      cssClass: 'aura-frame-spark',
+      sortOrder: 1,
+    },
+    {
+      slug: 'frame-rose',
+      name: 'Rose Halo',
+      description: 'Premium profile frame. Cosmetic only — does not change earned Aura rank.',
+      kind: 'FRAME' as const,
+      pricePaise: 7900,
+      cssClass: 'aura-frame-rose',
+      sortOrder: 2,
+    },
+    {
+      slug: 'frame-gold',
+      name: 'Golden Orbit',
+      description: 'Premium profile frame. Cosmetic only.',
+      kind: 'FRAME' as const,
+      pricePaise: 9900,
+      cssClass: 'aura-frame-gold',
+      sortOrder: 3,
+    },
+    {
+      slug: 'effect-shimmer',
+      name: 'Shimmer Pulse',
+      description: 'Subtle aura shimmer on your profile.',
+      kind: 'EFFECT' as const,
+      pricePaise: 14900,
+      cssClass: 'aura-effect-shimmer',
+      sortOrder: 4,
+    },
+  ];
+  for (const item of cosmetics) {
+    await prisma.cosmeticItem.upsert({
+      where: { slug: item.slug },
+      create: item,
+      update: {
+        name: item.name,
+        description: item.description,
+        pricePaise: item.pricePaise,
+        cssClass: item.cssClass,
+        sortOrder: item.sortOrder,
+        active: true,
+      },
+    });
+  }
 }
 
 main()

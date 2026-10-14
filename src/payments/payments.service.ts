@@ -12,6 +12,7 @@ import { randomToken } from '../domain/tokens.js';
 import { CashfreeProvider } from './cashfree/cashfree.provider.js';
 import { verifyCashfreeWebhook } from './cashfree/signature.js';
 import type { CheckoutOrderDto } from '../orders/orders.dto.js';
+import { AuraService } from '../aura/aura.service.js';
 
 @Injectable()
 export class PaymentsService {
@@ -25,6 +26,7 @@ export class PaymentsService {
     private readonly telegram: TelegramSender,
     private readonly notifications: NotificationsService,
     private readonly config: ConfigService<AppEnv, true>,
+    private readonly aura: AuraService,
   ) {}
 
   async checkout(buyerId: string, orderId: string, dto: CheckoutOrderDto) {
@@ -177,8 +179,16 @@ export class PaymentsService {
   }
 
   private async allocateLine(
-    item: { id: string; variantId: string; quantity: number; productType: string; lineTotalPaise: number },
-    order: { id: string; buyerId: string; creator: { userId: string } },
+    item: {
+      id: string;
+      variantId: string;
+      quantity: number;
+      productType: string;
+      lineTotalPaise: number;
+      unitPricePaise: number;
+      productName: string;
+    },
+    order: { id: string; buyerId: string; creatorId: string; creator: { userId: string } },
     days: number,
   ) {
     try {
@@ -203,6 +213,7 @@ export class PaymentsService {
         if (variant) {
           await tx.product.update({ where: { id: variant.productId }, data: { giftedCount: { increment: item.quantity } } });
         }
+        await this.aura.awardGiftForOrderItem(tx, order.buyerId, item, order.creatorId);
         void gift;
       });
       return true;
@@ -228,7 +239,7 @@ export class PaymentsService {
       refundId,
       amountPaise: item.lineTotalPaise,
     });
-    await this.prisma.refund.create({
+    const refund = await this.prisma.refund.create({
       data: {
         paymentId,
         orderItemId,
@@ -238,6 +249,7 @@ export class PaymentsService {
         status: remote.status === 'SUCCESS' ? 'SUCCESS' : 'PENDING',
       },
     });
+    await this.aura.reverseGiftForRefund(refund.id, orderItemId);
     if (item.gift && item.gift.status !== 'REFUNDED') {
       await this.prisma.gift.update({ where: { id: item.gift.id }, data: { status: 'REFUNDED', needsRefund: false } });
       await this.prisma.giftEvent.create({

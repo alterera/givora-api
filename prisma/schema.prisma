@@ -82,6 +82,28 @@ enum ReservationStatus {
   RELEASED
 }
 
+enum AuraLedgerType {
+  INVITE_ACCEPTED
+  GIFT_PAID
+  MILESTONE
+  REFUND_REVERSAL
+  ADMIN_ADJUSTMENT
+}
+
+enum CosmeticKind {
+  FRAME
+  EFFECT
+  THEME
+  BADGE
+}
+
+enum CosmeticPurchaseStatus {
+  PENDING_PAYMENT
+  PAID
+  FAILED
+  REFUNDED
+}
+
 model User {
   id               String    @id @default(cuid())
   email            String?   @unique
@@ -94,16 +116,23 @@ model User {
   telegramId       String?   @unique @map("telegram_id")
   telegramUsername String?   @map("telegram_username")
   botCanMessage    Boolean   @default(false) @map("bot_can_message")
+  earnedAura       Int       @default(0) @map("earned_aura")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  sessions      Session[]
-  auditLogs     AuditLog[]
-  creator       CreatorProfile?
-  orders        Order[]           @relation("BuyerOrders")
-  giftsReceived Gift[]            @relation("GiftRecipient")
-  giftsBought   Gift[]            @relation("GiftBuyer")
-  addresses     Address[]
+  sessions           Session[]
+  auditLogs          AuditLog[]
+  creator            CreatorProfile?
+  orders             Order[]              @relation("BuyerOrders")
+  giftsReceived      Gift[]               @relation("GiftRecipient")
+  giftsBought        Gift[]               @relation("GiftBuyer")
+  addresses          Address[]
+  auraLedger         AuraLedgerEntry[]
+  inviteClaims       CreatorInviteClaim[] @relation("FanInviteClaims")
+  milestones         UserMilestone[]
+  cosmetics          UserCosmetic[]
+  cosmeticLoadout    UserCosmeticLoadout?
+  cosmeticPurchases  CosmeticPurchase[]
 
   @@map("users")
 }
@@ -171,8 +200,9 @@ model CreatorProfile {
   createdAt         DateTime      @default(now()) @map("created_at")
   updatedAt         DateTime      @updatedAt @map("updated_at")
 
-  wishlist WishlistItem[]
-  orders   Order[]
+  wishlist     WishlistItem[]
+  orders       Order[]
+  inviteClaims CreatorInviteClaim[]
 
   @@map("creator_profiles")
 }
@@ -582,4 +612,110 @@ model NotificationLog {
 
   @@index([createdAt])
   @@map("notification_logs")
+}
+
+model AuraLedgerEntry {
+  id             String         @id @default(cuid())
+  userId         String         @map("user_id")
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type           AuraLedgerType
+  amount         Int
+  idempotencyKey String         @unique @map("idempotency_key")
+  creatorId      String?        @map("creator_id")
+  orderItemId    String?        @map("order_item_id")
+  refundId       String?        @map("refund_id")
+  milestoneKey   String?        @map("milestone_key")
+  metadata       Json?
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  milestone UserMilestone?
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("aura_ledger_entries")
+}
+
+model CreatorInviteClaim {
+  id         String         @id @default(cuid())
+  fanId      String         @map("fan_id")
+  fan        User           @relation("FanInviteClaims", fields: [fanId], references: [id], onDelete: Cascade)
+  creatorId  String         @map("creator_id")
+  creator    CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  acceptedAt DateTime       @default(now()) @map("accepted_at")
+
+  @@unique([fanId, creatorId])
+  @@map("creator_invite_claims")
+}
+
+model UserMilestone {
+  id             String          @id @default(cuid())
+  userId         String          @map("user_id")
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  milestoneKey   String          @map("milestone_key")
+  ledgerEntryId  String          @unique @map("ledger_entry_id")
+  ledgerEntry    AuraLedgerEntry @relation(fields: [ledgerEntryId], references: [id], onDelete: Cascade)
+  achievedAt     DateTime        @default(now()) @map("achieved_at")
+
+  @@unique([userId, milestoneKey])
+  @@map("user_milestones")
+}
+
+model CosmeticItem {
+  id          String       @id @default(cuid())
+  slug        String       @unique
+  name        String
+  description String       @default("")
+  kind        CosmeticKind
+  pricePaise  Int          @default(0) @map("price_paise")
+  previewUrl  String?      @map("preview_url")
+  cssClass    String?      @map("css_class")
+  sortOrder   Int          @default(0) @map("sort_order")
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  owners    UserCosmetic[]
+  purchases CosmeticPurchase[]
+
+  @@map("cosmetic_items")
+}
+
+model UserCosmetic {
+  id        String       @id @default(cuid())
+  userId    String       @map("user_id")
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemId    String       @map("item_id")
+  item      CosmeticItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  source    String       @default("purchase")
+  grantedAt DateTime     @default(now()) @map("granted_at")
+
+  @@unique([userId, itemId])
+  @@map("user_cosmetics")
+}
+
+model UserCosmeticLoadout {
+  userId        String        @id @map("user_id")
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  frameItemId   String?       @map("frame_item_id")
+  effectItemId  String?       @map("effect_item_id")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  @@map("user_cosmetic_loadouts")
+}
+
+model CosmeticPurchase {
+  id                String                 @id @default(cuid())
+  userId            String                 @map("user_id")
+  user              User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemId            String                 @map("item_id")
+  item              CosmeticItem           @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  providerOrderId   String                 @unique @map("provider_order_id")
+  paymentSessionId  String?                @map("payment_session_id")
+  providerPaymentId String?                @map("provider_payment_id")
+  amountPaise       Int                    @map("amount_paise")
+  status            CosmeticPurchaseStatus @default(PENDING_PAYMENT)
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("cosmetic_purchases")
 }

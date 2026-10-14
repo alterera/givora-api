@@ -32,6 +32,10 @@ import { OrdersService } from './orders/orders.service.js';
 import { MaintenanceService } from './maintenance/maintenance.service.js';
 import { HealthController } from './health/health.controller.js';
 import { LookupController } from './lookup/lookup.controller.js';
+import { AuraController } from './aura/aura.controller.js';
+import { AuraService } from './aura/aura.service.js';
+import { CosmeticsController } from './aura/cosmetics.controller.js';
+import { CosmeticsService } from './aura/cosmetics.service.js';
 
 @Module({
   imports: [
@@ -69,6 +73,8 @@ import { LookupController } from './lookup/lookup.controller.js';
     CreatorsController,
     OrdersController,
     LookupController,
+    AuraController,
+    CosmeticsController,
   ],
   providers: [
     AuthService,
@@ -85,6 +91,8 @@ import { LookupController } from './lookup/lookup.controller.js';
     CreatorsService,
     OrdersService,
     MaintenanceService,
+    AuraService,
+    CosmeticsService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },

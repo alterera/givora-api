@@ -9,11 +9,12 @@ import { MediaService } from '../media/media.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { badRequest, forbidden, notFound } from '../common/http.js';
 import { assertTransition, SHIPMENT_TRANSITIONS } from '../domain/transitions.js';
+import { tierForEarnedAura } from '../aura/rules.js';
 import type { AddressDto, RedeemDto } from './gifts.dto.js';
 
 const giftInclude = {
   orderItem: { include: { order: { include: { creator: true } } } },
-  buyer: { select: { id: true, displayName: true } },
+  buyer: { select: { id: true, displayName: true, earnedAura: true } },
   shipment: true,
   redemption: true,
   digitalAccess: true,
@@ -255,7 +256,7 @@ export class GiftsService {
       quantity: number;
       order: { message: string; createdAt: Date; creator: { displayName: string } };
     };
-    buyer: { displayName: string | null };
+    buyer: { displayName: string | null; earnedAura: number };
     shipment: { status: string; carrier: string | null; trackingRef: string | null } | null;
     redemption: { city: string; state: string; postalCode: string; line1: string } | null;
     events: Array<{ type: string; createdAt: Date; toStatus: string | null }>;
@@ -268,6 +269,13 @@ export class GiftsService {
       createdAt: gift.createdAt.toISOString(),
       message: gift.orderItem.order.message,
       from: gift.buyer.displayName ?? 'A fan',
+      supporter: (() => {
+        const tier = tierForEarnedAura(gift.buyer.earnedAura);
+        return {
+          earnedAura: gift.buyer.earnedAura,
+          tier: { id: tier.id, name: tier.name },
+        };
+      })(),
       productName: gift.orderItem.productName,
       variantName: gift.orderItem.variantName,
       imageUrl: gift.orderItem.imageUrl,
