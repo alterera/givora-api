@@ -1,6 +1,9 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { hash } from 'argon2';
+import { loadEnvFiles } from '../src/config/load-env-file.js';
 import { PrismaClient } from '../src/generated/prisma/client.js';
+
+loadEnvFiles();
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error('DATABASE_URL is required to seed');

@@ -1,3 +1,7 @@
+import { loadEnvFiles } from '../src/config/load-env-file.js';
+
+loadEnvFiles();
+
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
 const api = process.env.PUBLIC_API_URL ?? 'https://api.givoraworld.com';

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { loadEnvFiles } from './load-env-file.js';
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -58,6 +59,7 @@ const schema = z.object({
 export type AppEnv = z.infer<typeof schema>;
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
+  loadEnvFiles();
   const parsed = schema.safeParse(source);
   if (!parsed.success) {
     const details = parsed.error.issues

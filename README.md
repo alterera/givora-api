@@ -31,7 +31,7 @@ Telegram checkout uses Cashfree **inline** checkout in the Mini App first, with 
 
 ## Production
 
-Nginx samples live in `deploy/`. PM2 uses `ecosystem.config.cjs` from `/var/www/givora-api/current`. Keep secrets in `/var/www/givora-api/shared/.env`.
+Nginx samples live in `deploy/`. PM2 uses `ecosystem.config.cjs` from `/var/www/givora-api/current`. Keep secrets in `/var/www/givora-api/shared/.env` (or symlink/copy to `.env` in the app root). The API, Prisma CLI, and `npm run db:seed` load `.env`, then `shared/.env`, then `/var/www/givora-api/shared/.env` automatically.
 
 GitHub Actions on `main` builds, copies a release to the VPS, runs migrations, reloads PM2, and rolls back if `/api/v1/health` does not report a healthy database.
 
