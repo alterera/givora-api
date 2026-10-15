@@ -18,6 +18,7 @@ const schema = z.object({
   GIFT_REMINDER_DAYS: z.coerce.number().default(7),
   AURA_INVITE_POINTS: z.coerce.number().default(5),
   AURA_PAISE_PER_POINT: z.coerce.number().default(1000),
+  STREAK_DAY_PRICE_PAISE: z.coerce.number().default(4900),
   CASHFREE_ENV: z.preprocess(
     (val) => (typeof val === 'string' ? val.trim().toLowerCase() : val),
     z.enum(['sandbox', 'production']).default('sandbox'),

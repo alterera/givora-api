@@ -133,6 +133,8 @@ model User {
   cosmetics          UserCosmetic[]
   cosmeticLoadout    UserCosmeticLoadout?
   cosmeticPurchases  CosmeticPurchase[]
+  streaks            CreatorStreak[]    @relation("FanStreaks")
+  streakPurchases    StreakPurchase[]
 
   @@map("users")
 }
@@ -200,9 +202,11 @@ model CreatorProfile {
   createdAt         DateTime      @default(now()) @map("created_at")
   updatedAt         DateTime      @updatedAt @map("updated_at")
 
-  wishlist     WishlistItem[]
-  orders       Order[]
-  inviteClaims CreatorInviteClaim[]
+  wishlist        WishlistItem[]
+  orders          Order[]
+  inviteClaims    CreatorInviteClaim[]
+  streaks         CreatorStreak[]
+  streakPurchases StreakPurchase[]
 
   @@map("creator_profiles")
 }
@@ -718,4 +722,44 @@ model CosmeticPurchase {
 
   @@index([userId, createdAt(sort: Desc)])
   @@map("cosmetic_purchases")
+}
+
+enum StreakPurchaseStatus {
+  PENDING_PAYMENT
+  PAID
+  FAILED
+}
+
+model CreatorStreak {
+  id          String         @id @default(cuid())
+  fanId       String         @map("fan_id")
+  fan         User           @relation("FanStreaks", fields: [fanId], references: [id], onDelete: Cascade)
+  creatorId   String         @map("creator_id")
+  creator     CreatorProfile @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  days        Int            @default(0)
+  lastPaidOn  String?        @map("last_paid_on")
+  activeUntil DateTime?      @map("active_until")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  @@unique([fanId, creatorId])
+  @@map("creator_streaks")
+}
+
+model StreakPurchase {
+  id                String               @id @default(cuid())
+  fanId             String               @map("fan_id")
+  fan               User                 @relation(fields: [fanId], references: [id], onDelete: Cascade)
+  creatorId         String               @map("creator_id")
+  creator           CreatorProfile       @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  providerOrderId   String               @unique @map("provider_order_id")
+  paymentSessionId  String?              @map("payment_session_id")
+  providerPaymentId String?              @map("provider_payment_id")
+  amountPaise       Int                  @map("amount_paise")
+  status            StreakPurchaseStatus @default(PENDING_PAYMENT)
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+
+  @@index([fanId, creatorId, createdAt(sort: Desc)])
+  @@map("streak_purchases")
 }

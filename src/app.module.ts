@@ -36,6 +36,8 @@ import { AuraController } from './aura/aura.controller.js';
 import { AuraService } from './aura/aura.service.js';
 import { CosmeticsController } from './aura/cosmetics.controller.js';
 import { CosmeticsService } from './aura/cosmetics.service.js';
+import { StreakController } from './streaks/streak.controller.js';
+import { StreakService } from './streaks/streak.service.js';
 
 @Module({
   imports: [
@@ -75,6 +77,7 @@ import { CosmeticsService } from './aura/cosmetics.service.js';
     LookupController,
     AuraController,
     CosmeticsController,
+    StreakController,
   ],
   providers: [
     AuthService,
@@ -93,6 +96,7 @@ import { CosmeticsService } from './aura/cosmetics.service.js';
     MaintenanceService,
     AuraService,
     CosmeticsService,
+    StreakService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
