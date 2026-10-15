@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import sharp from 'sharp';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomToken } from '../domain/tokens.js';
 import { badRequest } from '../common/http.js';
@@ -14,6 +15,28 @@ export class MediaService {
   private client: S3Client | null = null;
 
   constructor(private readonly config: ConfigService<AppEnv, true>) {}
+
+  async uploadProductImage(buffer: Buffer, contentType: string) {
+    if (!ALLOWED.has(contentType)) throw badRequest('FILE_TYPE', 'Upload a JPEG, PNG, or WebP image.');
+    const webp = await sharp(buffer)
+      .rotate()
+      .resize({ width: 1080, height: 1350, fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 82 })
+      .toBuffer();
+    const key = `products/${randomToken(12)}.webp`;
+    const bucket = this.config.get('S3_BUCKET', { infer: true });
+    await this.s3().send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: webp,
+        ContentType: 'image/webp',
+        CacheControl: 'public, max-age=31536000, immutable',
+      }),
+    );
+    const publicUrl = `${this.config.get('S3_PUBLIC_BASE_URL', { infer: true }).replace(/\/$/, '')}/${key}`;
+    return { publicUrl, key };
+  }
 
   async presign(fileName: string, contentType: string) {
     if (!ALLOWED.has(contentType)) throw badRequest('FILE_TYPE', 'Upload a JPEG, PNG, or WebP image.');

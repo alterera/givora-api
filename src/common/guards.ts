@@ -4,18 +4,19 @@ import { Reflector } from '@nestjs/core';
 import { jwtVerify } from 'jose';
 import type { Request } from 'express';
 import type { AppEnv } from '../config/env.js';
-import { PrismaService } from '../database/prisma.service.js';
 import { IS_PUBLIC, ROLES_KEY, SKIP_CSRF, type AuthUser } from './decorators.js';
 import { forbidden, unauthorized } from './http.js';
+import { TelegramInitAuthService } from '../telegram/telegram-init-auth.service.js';
 
 const ACCESS_COOKIE = 'givora_access';
+const INIT_DATA_HEADER = 'x-telegram-init-data';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly config: ConfigService<AppEnv, true>,
-    private readonly prisma: PrismaService,
+    private readonly telegramInit: TelegramInitAuthService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -25,30 +26,33 @@ export class JwtAuthGuard implements CanActivate {
     ]);
     const request = context.switchToHttp().getRequest<Request & { user?: AuthUser }>();
     const token = readAccessToken(request);
-    if (!token) {
-      if (isPublic) return true;
-      throw unauthorized();
+    if (token) {
+      try {
+        const secret = new TextEncoder().encode(this.config.get('JWT_ACCESS_SECRET', { infer: true }));
+        const { payload } = await jwtVerify(token, secret);
+        const sessionId = typeof payload.sid === 'string' ? payload.sid : '';
+        const userId = typeof payload.sub === 'string' ? payload.sub : '';
+        if (!userId) throw unauthorized();
+        const role = payload.role === 'ADMIN' ? 'ADMIN' : 'CUSTOMER';
+        request.user = { id: userId, role, sessionId };
+        return true;
+      } catch {
+        if (isPublic) return true;
+        throw unauthorized('Your session expired. Sign in again.');
+      }
     }
-    try {
-      const secret = new TextEncoder().encode(this.config.get('JWT_ACCESS_SECRET', { infer: true }));
-      const { payload } = await jwtVerify(token, secret);
-      const sessionId = typeof payload.sid === 'string' ? payload.sid : '';
-      const userId = typeof payload.sub === 'string' ? payload.sub : '';
-      const session = await this.prisma.session.findFirst({
-        where: { id: sessionId, userId, revokedAt: null, expiresAt: { gt: new Date() } },
-        include: { user: true },
-      });
-      if (!session) throw unauthorized();
-      request.user = {
-        id: session.user.id,
-        role: session.user.role,
-        sessionId: session.id,
-      };
-      return true;
-    } catch {
-      if (isPublic) return true;
-      throw unauthorized('Your session expired. Sign in again.');
+
+    const initData = request.header(INIT_DATA_HEADER);
+    if (initData) {
+      const user = await this.telegramInit.authenticate(initData);
+      if (user) {
+        request.user = user;
+        return true;
+      }
     }
+
+    if (isPublic) return true;
+    throw unauthorized();
   }
 }
 

@@ -1,8 +1,21 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Public, Roles, type AuthUser } from '../common/decorators.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { badRequest } from '../common/http.js';
 import { InventoryService } from '../inventory/inventory.service.js';
 import { MediaService } from '../media/media.service.js';
 import { CatalogService } from './catalog.service.js';
@@ -137,6 +150,14 @@ export class CatalogController {
   @Post('admin/media/presign')
   presign(@Body() dto: PresignDto) {
     return this.media.presign(dto.fileName, dto.contentType);
+  }
+
+  @Roles('ADMIN')
+  @Post('admin/media/upload-image')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 15 * 1024 * 1024 } }))
+  uploadImage(@UploadedFile() file?: { buffer: Buffer; mimetype: string }) {
+    if (!file?.buffer?.length) throw badRequest('FILE_REQUIRED', 'Choose an image to upload.');
+    return this.media.uploadProductImage(file.buffer, file.mimetype);
   }
 
   @Roles('ADMIN')

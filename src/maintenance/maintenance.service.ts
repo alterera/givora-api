@@ -28,6 +28,7 @@ export class MaintenanceService {
       await this.remind();
       await this.expireGifts();
       await this.reconcilePending();
+      await this.pruneSessions();
     } catch (error) {
       this.logger.error(error);
     } finally {
@@ -83,6 +84,30 @@ export class MaintenanceService {
         await this.payments.refundLine(paid.id, gift.orderItem.id, 'Unredeemed gift expired').catch((error) => this.logger.error(error));
       }
     }
+  }
+
+  async pruneSessions() {
+    const now = new Date();
+    const revokedCutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    await this.prisma.session.deleteMany({
+      where: {
+        OR: [{ expiresAt: { lt: now } }, { revokedAt: { lt: revokedCutoff } }],
+      },
+    });
+    await this.prisma.idempotencyRecord.deleteMany({
+      where: { createdAt: { lt: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) } },
+    });
+    await this.prisma.otpChallenge.deleteMany({
+      where: { expiresAt: { lt: now } },
+    });
+    await this.prisma.actionToken.deleteMany({
+      where: {
+        OR: [
+          { expiresAt: { lt: now } },
+          { consumedAt: { not: null, lt: revokedCutoff } },
+        ],
+      },
+    });
   }
 
   async reconcilePending() {

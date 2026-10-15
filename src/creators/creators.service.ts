@@ -85,11 +85,18 @@ export class CreatorsService {
   }
 
   async publicBySlug(slug: string) {
-    return this.publicWhere({ slug });
+    return this.publicBySlugOrCode(slug);
   }
 
   async publicByCode(code: string) {
-    return this.publicWhere({ shortCode: code });
+    return this.publicBySlugOrCode(code);
+  }
+
+  async publicBySlugOrCode(slugOrCode: string) {
+    const where = slugOrCode.startsWith('c_')
+      ? { shortCode: slugOrCode, status: 'APPROVED' as const }
+      : { slug: slugOrCode, status: 'APPROVED' as const };
+    return this.publicWhere(where);
   }
 
   async addWishlist(userId: string, variantId: string) {
@@ -173,9 +180,9 @@ export class CreatorsService {
     return profile;
   }
 
-  private async publicWhere(where: { slug: string } | { shortCode: string }) {
+  private async publicWhere(where: { slug: string; status: 'APPROVED' } | { shortCode: string; status: 'APPROVED' }) {
     const profile = await this.prisma.creatorProfile.findFirst({
-      where: { ...where, status: 'APPROVED' },
+      where,
       include: {
         wishlist: { where: { isVisible: true }, include: publicItem, orderBy: { sortOrder: 'asc' } },
       },

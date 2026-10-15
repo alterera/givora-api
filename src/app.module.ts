@@ -25,6 +25,9 @@ import { PaymentsService } from './payments/payments.service.js';
 import { CashfreeProvider } from './payments/cashfree/cashfree.provider.js';
 import { TelegramController } from './telegram/telegram.controller.js';
 import { TelegramSender } from './telegram/telegram.sender.js';
+import { TelegramInitAuthService } from './telegram/telegram-init-auth.service.js';
+import { TgMiniAppController } from './telegram/tg-miniapp.controller.js';
+import { TgMiniAppService } from './telegram/tg-miniapp.service.js';
 import { CreatorsController } from './creators/creators.controller.js';
 import { CreatorsService } from './creators/creators.service.js';
 import { OrdersController } from './orders/orders.controller.js';
@@ -72,6 +75,7 @@ import { StreakService } from './streaks/streak.service.js';
     GiftsController,
     PaymentsController,
     TelegramController,
+    TgMiniAppController,
     CreatorsController,
     OrdersController,
     LookupController,
@@ -91,6 +95,8 @@ import { StreakService } from './streaks/streak.service.js';
     PaymentsService,
     CashfreeProvider,
     TelegramSender,
+    TelegramInitAuthService,
+    TgMiniAppService,
     CreatorsService,
     OrdersService,
     MaintenanceService,

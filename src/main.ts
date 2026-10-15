@@ -22,6 +22,7 @@ app.use(cookieParser());
 app.enableCors({
   origin: config.get('WEB_ORIGIN', { infer: true }),
   credentials: true,
+  maxAge: 7200,
 });
 app.useGlobalPipes(
   new ValidationPipe({
